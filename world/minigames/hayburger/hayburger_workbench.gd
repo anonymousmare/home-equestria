@@ -56,10 +56,16 @@ func setup(host: Node) -> void:
 	_box(self, Vector3(0.07,0.25,0.07), SIGN - Vector3(0,0.25,0), Color("9b6546"))
 	_box(self, Vector3(0.4,0.035,0.25), SIGN - Vector3(0,0.27,0), Color("9b6546"))
 	_build_bell()
-	# Open-topped waste bin. Only deliberate releases over its opening discard food.
+	# Open-topped waste bin. Only deliberate releases over its opening or inside it discard food.
+	# Solid, so a desktop click aims at its floor (not the room floor, out of reach) and food
+	# that misses lands in it instead of falling through.
+	var bin_body: StaticBody3D = StaticBody3D.new(); bin_body.name = "ScrapsBin"
+	bin_body.collision_layer = 1; bin_body.collision_mask = 0; add_child(bin_body)
 	for offset: Vector3 in [Vector3(-.23,-.30,0), Vector3(.23,-.30,0), Vector3(0,-.30,-.23), Vector3(0,-.30,.23)]:
-		_box(self, Vector3(.035,.60,.48) if offset.x != 0 else Vector3(.48,.60,.035), BIN + offset, Color("7a5a3c"))
+		var wall: Vector3 = Vector3(.035,.60,.48) if offset.x != 0 else Vector3(.48,.60,.035)
+		_box(self, wall, BIN + offset, Color("7a5a3c")); _shape(bin_body, wall, BIN + offset)
 	_box(self, Vector3(.48,.035,.48), BIN + Vector3(0,-.6,0), Color("7a5a3c"))
+	_shape(bin_body, Vector3(.48,.035,.48), BIN + Vector3(0,-.6,0))
 	_label(self,"Scraps",BIN+Vector3(0,-.22,-.25),.0022).rotation.y = PI
 	# Every work destination stays visible even when it has no food on it.
 	# Solid: desktop placement aims at the first world collider, and without its own the pad's
@@ -288,7 +294,7 @@ func release(side: String, intentional: bool = true) -> bool:
 	var kind: String = item.get_meta("ingredient","")
 	var accepted: bool = false
 	if working() and intentional:
-		if _over(at,BIN,Vector2(.28,.28),.55):
+		if _in_bin(at):
 			if role == "burger": accepted = restaurant.work_action("discard_tray")
 			elif item.get_meta("cooked",false): accepted = restaurant.work_action("discard_patty")
 			else: accepted = true
@@ -300,7 +306,7 @@ func release(side: String, intentional: bool = true) -> bool:
 			accepted = restaurant.work_action("take_patty" if kind == "patty" and item.get_meta("cooked",false) else kind)
 	held.erase(side)
 	if accepted:
-		var event := "prop_harvest_deposit" if _over(at,BIN,Vector2(.28,.28),.55) else "prop_grill" if kind == "raw" and _over(at,GRILL,Vector2(.65,.34),.32) else "prop_serve"
+		var event := "prop_harvest_deposit" if _in_bin(at) else "prop_grill" if kind == "raw" and _over(at,GRILL,Vector2(.65,.34),.32) else "prop_serve"
 		SFX.play_event(self, event, {"intensity": .65}, item.global_position)
 		_remove(item)
 	else:
@@ -328,6 +334,10 @@ func reachable(point: Vector3, reach: float = .23) -> Node3D:
 		if not get_world_3d().direct_space_state.intersect_ray(query).is_empty(): continue
 		nearest = child; best = distance
 	return nearest
+
+## From the bin's floor (where desktop clicks land) up to .55 over its rim (where VR hands let go).
+func _in_bin(point: Vector3) -> bool:
+	return _over(point,BIN-Vector3(0,.55,0),Vector2(.28,.28),1.1)
 
 func _over(point: Vector3, centre: Vector3, half: Vector2, height: float) -> bool:
 	return absf(point.x-centre.x) < half.x and absf(point.z-centre.z) < half.y and point.y >= centre.y-.07 and point.y < centre.y+height
@@ -451,7 +461,7 @@ func release_hint(side: String, world_point: Vector3 = Vector3.INF) -> Dictionar
 	if not is_instance_valid(item): return {}
 	var at: Vector3 = to_local(world_point if world_point.is_finite() else item.global_position)
 	var kind: String = item.get_meta("ingredient","")
-	if _over(at,BIN,Vector2(.28,.28),.55): return {"target":stations.bin,"text":"Discard in scraps"}
+	if _in_bin(at): return {"target":stations.bin,"text":"Discard in scraps"}
 	if item.get_meta("kitchen_role","") == "burger":
 		if _over(at,PASS,Vector2(.34,.29),.38): return {"target":stations.pass,"text":"Serve hayburger"}
 	elif kind == "raw" and _over(at,GRILL,Vector2(.65,.34),.32): return {"target":stations.grill,"text":"Place patty on grill"}
