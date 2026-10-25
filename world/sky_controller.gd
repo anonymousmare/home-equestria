@@ -153,8 +153,8 @@ func _ready() -> void:
 	_load_profiles()
 	_build_environment()
 	if "--debug" in preload("res://world/dev_tools.gd").user_args():
-		debug_lighting = load("res://world/debug/lighting_controls.gd").new()
-		add_child(debug_lighting)
+		debug_lighting = preload("res://world/dev_tools.gd").optional("res://world/debug/lighting_controls.gd")
+		if debug_lighting != null: add_child(debug_lighting)
 	TimeOfDay.time_changed.connect(_on_time_changed)
 	Quality.preset_changed.connect(_on_quality_changed)
 	_apply_quality()

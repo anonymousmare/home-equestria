@@ -12,6 +12,15 @@ static func enabled() -> bool:
 	return not OS.has_feature("player_build")
 
 
+## A new instance of an optional developer script, or null when this checkout does not ship it
+## (the public repository leaves out the render profiler, command console and lighting pages
+## under world/debug/, but editor runs still ask for them).
+static func optional(path: String) -> Object:
+	if not ResourceLoader.exists(path): return null
+	var script := load(path) as Script
+	return script.new() if script != null else null
+
+
 ## Exported debug builds for testers (dev 2026-10-20: "debug build so he can get all his ai
 ## logs ... optimize token usage") record full AI traffic without launch flags: the same as
 ## `-- --ai-trace-full`. The editor and release exports do not.

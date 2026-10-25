@@ -94,8 +94,8 @@ func _spawn_player() -> void:
 		var fps_debug:=preload("res://world/ui/debug_fps.gd").new()
 		fps_debug.name="DebugFPS";host.add_child(fps_debug);fps_debug.setup(cam,host.xr_active)
 		if DEV.enabled():
-			var render_profiler: Node = load("res://world/debug/render_profiler.gd").new()
-			render_profiler.name = "RenderProfiler"; host.add_child(render_profiler)
+			var render_profiler: Node = DEV.optional("res://world/debug/render_profiler.gd")
+			if render_profiler != null: render_profiler.name = "RenderProfiler"; host.add_child(render_profiler)
 			var measure: Node = load("res://world/debug/pony_measure.gd").new()
 			measure.name = "PonyMeasure"; host.add_child(measure)
 		var interactor: Node = INTERACTOR.new()
@@ -141,8 +141,8 @@ func _spawn_player() -> void:
 			var chat := preload("res://world/ui/chat_box.gd").new()
 			chat.name = "ChatBox"; host.add_child(chat); chat.setup(host.director, host.player, host.inventory)
 	if DEV.enabled():
-		var console: Node = load("res://world/debug/command_console.gd").new()
-		console.name = "CommandConsole"; host.add_child(console); console.setup(host)
+		var console: Node = DEV.optional("res://world/debug/command_console.gd")
+		if console != null: console.name = "CommandConsole"; host.add_child(console); console.setup(host)
 	# --spectator [1-4]: a second, smoothed/third-person window for recording.
 	var args := preload("res://world/dev_tools.gd").user_args()
 	if "--spectator" in args:

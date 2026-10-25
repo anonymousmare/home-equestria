@@ -51,9 +51,10 @@ func setup(page_size: Vector2, text_size: int, back_text: String, in_xr := false
 			_row(list, str(row[0]), str(row[1]))
 			if str(row[1]) == "video/quality": _quality_note = _note(list, "")
 		if str(tab[0]) == "Graphics" and "--debug" in preload("res://world/dev_tools.gd").user_args():
-			_lighting_controls = load("res://world/debug/lighting_page.gd").new()
-			list.add_child(_lighting_controls)
-			_lighting_controls.setup(font_size, _redraw)
+			_lighting_controls = preload("res://world/dev_tools.gd").optional("res://world/debug/lighting_page.gd")
+			if _lighting_controls != null:
+				list.add_child(_lighting_controls)
+				_lighting_controls.setup(font_size, _redraw)
 		if str(tab[0]) == "VR comfort":
 			_note(list, "A comfort vignette is not available yet.")
 		if str(tab[0]) == "Controls":
