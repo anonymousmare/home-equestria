@@ -62,7 +62,9 @@ func setup(host: Node) -> void:
 	_box(self, Vector3(.48,.035,.48), BIN + Vector3(0,-.6,0), Color("7a5a3c"))
 	_label(self,"Scraps",BIN+Vector3(0,-.22,-.25),.0022).rotation.y = PI
 	# Every work destination stays visible even when it has no food on it.
-	_station("prep", PREP, Vector3(.64,.02,.54), Color("c49a6c"))
+	# Solid: desktop placement aims at the first world collider, and without its own the pad's
+	# drop point was the worktop under the trays, below the PREP release band.
+	_station("prep", PREP, Vector3(.64,.02,.54), Color("c49a6c"), true)
 	_label(self,"Build",PREP+Vector3(0,.025,.20),.00165).rotation.x = -PI/2
 	_station("grill", GRILL+Vector3(0,0,-.36), Vector3(1.0,.025,.055), Color("deb950"))
 	_station("pass", PASS, Vector3(.64,.018,.52), Color("b0503d"))
@@ -397,10 +399,14 @@ func _label(parent: Node3D, text: String, at: Vector3, pixel: float) -> Label3D:
 	label.modulate = Color("fff0d2"); label.outline_size = 0; label.no_depth_test = false; label.shaded = true
 	return label
 
-func _station(key: String, at: Vector3, size: Vector3, colour: Color) -> void:
+func _station(key: String, at: Vector3, size: Vector3, colour: Color, solid: bool = false) -> void:
 	var node: Node3D = Node3D.new(); node.name = key.capitalize() + "Station"
 	add_child(node); node.position = at
 	_box(node,size,Vector3.ZERO,colour)
+	if solid:
+		var pad: StaticBody3D = StaticBody3D.new(); pad.name = "Pad"
+		pad.collision_layer = 1; pad.collision_mask = 0
+		node.add_child(pad); _shape(pad,size,Vector3.ZERO)
 	stations[key] = node
 
 func next_step(data: Dictionary) -> String:
