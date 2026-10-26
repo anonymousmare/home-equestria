@@ -86,6 +86,12 @@ func _show_hint() -> void:
 	_label.show()
 
 
+## A line shown with the hint for a few seconds ("You pour a mug of hot tea.").
+func note(text: String) -> void:
+	_say(text)
+	if not held.is_empty(): _show_hint()
+
+
 func put_away() -> void:
 	if held.is_empty(): return
 	var belongings: Node = get_tree().get_first_node_in_group("pony_belongings")

@@ -143,12 +143,14 @@ func _spawn_player() -> void:
 		if not host.xr_active:
 			var chat := preload("res://world/ui/chat_box.gd").new()
 			chat.name = "ChatBox"; host.add_child(chat); chat.setup(host.director, host.player, host.inventory)
+	# Anon's hand for chemistry vessels (a mug of tea from a tea set, a pony's gift): every build.
+	if not host.xr_active:
+		var hand: Node = load("res://world/chemistry/chem_hand.gd").new()
+		hand.name = "ChemHand"; host.add_child(hand); hand.setup(host)
 	# L: the chemistry lab (world/chemistry/chem_lab_gui.gd); Ctrl+Shift+click: teleport (dev_teleport.gd).
 	if DEV.enabled() and not host.xr_active:
 		var lab: Node = load("res://world/chemistry/chem_lab_gui.gd").new()
 		lab.name = "ChemLab"; host.add_child(lab); lab.setup(host)
-		var hand: Node = load("res://world/chemistry/chem_hand.gd").new()
-		hand.name = "ChemHand"; host.add_child(hand); hand.setup(host)
 		var teleport: Node = load("res://world/debug/dev_teleport.gd").new()
 		teleport.name = "DevTeleport"; host.add_child(teleport); teleport.setup(host)
 	if DEV.enabled() and ResourceLoader.exists("res://world/debug/command_console.gd"):

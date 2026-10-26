@@ -149,6 +149,9 @@ func submit(actions: Array, targets: Dictionary, turn: int, ai_origin := false) 
 			"give_house":
 				if is_instance_valid(coordinator): coordinator.dispatch_house(character_id, action)
 				else: _report(action, "failed", "House grant coordinator unavailable")
+			"pour_tea":
+				if is_instance_valid(coordinator): coordinator.dispatch_tea(character_id, action, targets)
+				else: _report(action, "failed", "Tea coordinator unavailable")
 			"use_item":
 				if is_instance_valid(coordinator): coordinator.dispatch_item(character_id, action, targets)
 				else: _report(action, "failed", "Item coordinator unavailable")

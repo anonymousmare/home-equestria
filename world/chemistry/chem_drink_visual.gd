@@ -35,6 +35,7 @@ var pocket := false
 var _time := 0.0
 var _skeleton: Skeleton3D
 var _bone := -1
+var _spine := -1
 var _steam: CPUParticles3D
 var _hot := false
 var _magic := false
@@ -102,6 +103,8 @@ func _find_hoof() -> void:
 			var bone := (sk as Skeleton3D).find_bone(HAND_BONES[i])
 			if bone >= 0:
 				_skeleton = sk as Skeleton3D; _bone = bone
+				_spine = _skeleton.find_bone("pony_spine3")
+				if _spine < 0: _spine = _skeleton.find_bone("pony_hips")
 				_side = 1 if i == 0 else 0
 				return
 
@@ -136,6 +139,9 @@ func _rest() -> Vector3:
 ## Where she keeps her things: her right side, behind the withers.
 func _pocket() -> Vector3:
 	var f := _frame()
+	# Anchored to her back bone, so it follows her body down when she lies or sits.
+	if _skeleton != null and is_instance_valid(_skeleton) and _spine >= 0:
+		return (_skeleton.global_transform * _skeleton.get_bone_global_pose(_spine)).origin + f.x * 0.18 * _scale()
 	return pony.global_position + f.y * 0.7 * _scale() + f.x * 0.18 * _scale() + f.z * 0.05 * _scale()
 
 
@@ -225,6 +231,10 @@ func _place(progress: float) -> void:
 ## Her foreleg follows the vessel from the moment she has it until it is being put away.
 func _reach(progress: float, pos: Vector3, orient: Basis, s: float) -> void:
 	if not legs_move or pony.get("hoof_hold") == null or not pony.hoof_hold.has_method("reach"): return
+	# Sitting or lying with her drink: the leg stays where her posture put it, and lets go if
+	# she lowers herself in the middle of a sip.
+	if pony.get("posture") != null and pony.posture.has_method("active") and pony.posture.active():
+		_let_go(); return
 	var hold_on: bool = progress >= TAKE_END * 0.7 and progress < LOWER_END
 	var grip := pos + orient * Vector3(0, CONTAINER.height(str(vessel.get_meta("type"))) * 0.4 * s, 0)
 	if hold_on and not _reaching:

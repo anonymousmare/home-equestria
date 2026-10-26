@@ -113,7 +113,11 @@ static func give(game: Node, pony: Node3D, dose: Dictionary, giver := "player", 
 	# Where it comes from: her own things, or the hand of whoever gave it (Anon's view, or a pony).
 	var pocket := giver == id
 	var from_point := Vector3.INF
-	if not pocket and giver_node != null and is_instance_valid(giver_node):
+	var given_from: Variant = info.get("origin")
+	if given_from is Vector3 and (given_from as Vector3).is_finite():
+		# Poured from a tea set: it comes off the set, not out of her side.
+		from_point = given_from; pocket = false
+	elif not pocket and giver_node != null and is_instance_valid(giver_node):
 		from_point = giver_node.global_position + (-giver_node.global_basis.z * 0.45 + Vector3.DOWN * 0.25 if giver == "player" else Vector3.UP * 0.7)
 	DRINK.drink(game, pony, container, _mix_color(dose), clampf(units / CONTAINER.capacity(container), 0.15, 1.0), temp, 4.2, 0.0, from_point, pocket)
 	if pony.has_method("set_action_gaze") and giver_node != null: pony.set_action_gaze(giver_node)

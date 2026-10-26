@@ -40,6 +40,9 @@ const MODE_SPELLINGS := {"give": "drink", "drink": "drink", "secret": "secret", 
 var game: Node
 var _pending: Array = []   # {user, key, recipient, mode, node: WeakRef, executor: WeakRef, action, until}
 var _tick := 0.0
+## Where something she is about to use comes from, instead of her side: "pony/item key" -> world
+## point (a tea set, chem_tea.gd). Not saved.
+var origins: Dictionary = {}
 
 
 func setup(host: Node) -> void:
@@ -151,6 +154,11 @@ func _set_items(pony_id: String, items: Array) -> void:
 
 func keys_for(pony_id: String) -> Array:
 	return items_for(pony_id).map(func(row: Dictionary) -> String: return row.key)
+
+
+## Puts a bottle in her things (false when her hooves are full).
+func add_item(pony_id: String, dose: Dictionary, from: String, vessel := {}) -> bool:
+	return _add_item(pony_id, dose, from, vessel)
 
 
 func _add_item(pony_id: String, dose: Dictionary, from: String, vessel := {}) -> bool:
@@ -297,6 +305,9 @@ func _finish(user: String, actor: Node3D, key: String, recipient: String, mode: 
 	if row.is_empty(): executor._report(action, "failed", "You are not carrying that any more"); return
 	var dose: Dictionary = row.dose
 	var vessel := _vessel_of(row)
+	var origin: Variant = origins.get(user + "/" + key)
+	origins.erase(user + "/" + key)
+	if origin is Vector3 and (origin as Vector3).is_finite(): vessel["origin"] = origin
 	var main := main_of(dose)
 	var explosive := BLAST.is_explosive(main)
 	var result := {"ok": false, "text": ""}
@@ -305,14 +316,22 @@ func _finish(user: String, actor: Node3D, key: String, recipient: String, mode: 
 			BLAST.blast(game, node.global_position + Vector3(0, -1.2, 0), main, total_of(dose), user)
 			result = {"ok": true, "text": "Set it off right beside Anon"}
 		else:
-			var bottles := player_bottles()
 			var offered := {"dose": dose, "from": user}
 			offered.merge(vessel)
-			bottles.append(offered)
-			set_player_bottles(bottles)
-			var lab: Node = game.get_node_or_null("ChemLab")
-			if lab != null and lab.has_method("received"): lab.received("%s gave you a %s." % [EFFECTS.display_name(actor), label_of(dose).to_lower()])
-			game.world_context.record("gift", "You gave Anon your %s." % label_of(dose).to_lower(), [user], [user, "player"])
+			offered.erase("origin")
+			var hand: Node = get_tree().get_first_node_in_group("chem_hand")
+			var given := "%s hands you a %s of %s." % [EFFECTS.display_name(actor), CONTAINER.noun(str(vessel.container)), CATALOG.name_of(main).to_lower()]
+			if hand != null and hand.held.is_empty():
+				# Straight into his hand: click to drink it, or offer it on.
+				hand.hold(offered)
+				hand.note(given)
+			else:
+				var bottles := player_bottles()
+				bottles.append(offered)
+				set_player_bottles(bottles)
+				var lab: Node = game.get_node_or_null("ChemLab")
+				if lab != null and lab.has_method("received"): lab.received(given)
+			game.world_context.record("gift", "You gave Anon a %s of %s." % [CONTAINER.noun(str(vessel.container)), CATALOG.name_of(main).to_lower()], [user], [user, "player"])
 			result = {"ok": true, "text": "Handed it to Anon"}
 	elif explosive and mode != "keep":
 		var at := node.global_position + (-node.global_basis.z * 1.2 if recipient == "self" else Vector3.ZERO)
