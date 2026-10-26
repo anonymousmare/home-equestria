@@ -62,6 +62,8 @@ func situation_block(id: String) -> String:
 	if node.has_meta("hayburger_order_context"): lines.append(str(node.get_meta("hayburger_order_context")))
 	# A potion Anon gave her that is still working (world/chemistry/pony_potion_effects.gd).
 	if node.has_meta("potion_context"): lines.append(str(node.get_meta("potion_context")))
+	# A cup of her drink resting beside her while she sits or lies (world/chemistry/chem_drink_visual.gd).
+	if node.has_meta("chem_cup_context"): lines.append(str(node.get_meta("chem_cup_context")))
 	# Bottles she keeps for later and can use with [use_item] (world/chemistry/pony_belongings.gd).
 	var belongings: Node = host.get_tree().get_first_node_in_group("pony_belongings")
 	if belongings != null:

@@ -13,6 +13,9 @@ extends Node3D
 ##   from there. `pocket`: she took it out of her own things.
 ## receive(): she is given something to keep: it comes from `origin` to her hoof, and she tucks
 ##   it away.
+## Sitting or lying down (dev 2026-10-26: "keep the cup next to her"): the cup is set down on the
+##   floor beside her instead of tucked away. She sips now and then, it drains, and when she gets
+##   up she picks it up, finishes it and tucks it away.
 const CONTAINER := preload("res://world/chemistry/chem_container.gd")
 const CATALOG := preload("res://world/chemistry/chem_catalog.gd")
 const HAND_BONES := ["pony_hand_R", "pony_hand_L"]
@@ -21,6 +24,12 @@ const TAKE_END := 0.14
 const LIFT_END := 0.34
 const SIP_END := 0.78
 const LOWER_END := 0.9
+## Resting beside her: sips before she finishes it, seconds between sips, and the longest it stays.
+const MAX_SIPS := 4
+const SIP_GAP_MIN := 22.0
+const SIP_GAP_MAX := 36.0
+const MAX_REST := 150.0
+const STEAM_SECONDS := 90.0
 ## The foreleg reaches with the cup (the lab's checkbox turns this off if a rig misbehaves).
 static var legs_move := true
 
@@ -32,6 +41,14 @@ var from_level := 1.0
 var to_level := 0.0
 var origin := Vector3.INF
 var pocket := false
+## What is in it, for her prompt ("tea").
+var what := "something to drink"
+var resting := false     # a sitting or lying drink: set down beside her, not tucked away
+var sips := 0
+var _final := false
+var _level := 1.0
+var _rest_time := 0.0
+var _next_sip := 0.0
 var _time := 0.0
 var _skeleton: Skeleton3D
 var _bone := -1
@@ -92,6 +109,10 @@ static func _start(host: Node, pony: Node3D, container: String, liquid: Color, f
 		glow.light_color = colour if colour is Color else Color(0.7, 0.8, 1.0)
 		glow.position = node.vessel.get_meta("rim_local")
 		node.vessel.add_child(glow)
+	# Sitting or lying: the cup will rest beside her, so the first sip leaves some in it.
+	if how == "drink" and node._grounded():
+		node.resting = true
+		node.to_level = maxf(to_l, from_l * 0.7)
 	node._place(0.0)
 	node.reset_physics_interpolation()
 	return node
@@ -161,14 +182,71 @@ func _physics_process(delta: float) -> void:
 	if _releasing:
 		_fade += delta
 		if _fade > 0.35: queue_free(); return
+	if mode == "rest":
+		_resting(delta); return
 	var timed := mode != "hold"
 	var progress := clampf(_time / total, 0.0, 1.0) if timed else 0.0
 	_place(progress)
-	if timed and _time >= total: queue_free()
+	if timed and _time >= total: _finished()
 
 
 func _exit_tree() -> void:
 	_let_go()
+	_forget()
+
+
+func _grounded() -> bool:
+	return pony.get("posture") != null and pony.posture.has_method("active") and pony.posture.active()
+
+
+## A sip is over: a sitting or lying pony leaves the cup beside her; anyone else is done.
+func _finished() -> void:
+	if mode == "drink" and resting and not _final and _grounded() and _level > 0.08:
+		mode = "rest"; _rest_time = 0.0; _next_sip = randf_range(SIP_GAP_MIN, SIP_GAP_MAX)
+		_tell()
+	else:
+		queue_free()
+
+
+## The cup on the floor beside her: sips now and then, then she finishes it when she gets up.
+func _resting(delta: float) -> void:
+	_rest_time += delta
+	if not _grounded() or _rest_time >= MAX_REST or sips >= MAX_SIPS:
+		_begin_sip(true); return
+	if _rest_time >= _next_sip:
+		_begin_sip(false); return
+	_place(0.0)
+
+
+func _begin_sip(final: bool) -> void:
+	mode = "drink"; _time = 0.0; sips += 1
+	from_level = _level
+	if final:
+		# Picked up off the floor, finished, tucked away.
+		_final = true; total = 3.6; to_level = 0.0
+		pocket = true; origin = _ground_spot()
+		_forget()
+	else:
+		total = 3.4; to_level = _level * 0.65
+		pocket = false; origin = Vector3.INF
+
+
+## Beside her on the floor, on her right, by her forehooves.
+func _ground_spot() -> Vector3:
+	var f := _frame()
+	var s := _scale()
+	var base := _rest()
+	return Vector3(base.x, pony.global_position.y + 0.004, base.z) + f.x * 0.14 * s + (-f.z) * 0.05 * s
+
+
+## Her prompt mentions the cup while it sits beside her (director_prompts.gd).
+func _tell() -> void:
+	var kind: String = str(pony.posture.kind) if pony.get("posture") != null else "sit"
+	pony.set_meta("chem_cup_context", "- You are %s with a %s of %s beside you on the floor and take a sip now and then. When you get up you will finish it." % ["lying down" if kind == "lie_down" else "sitting", CONTAINER.noun(str(vessel.get_meta("type"))), what])
+
+
+func _forget() -> void:
+	if is_instance_valid(pony) and pony.has_meta("chem_cup_context"): pony.remove_meta("chem_cup_context")
 
 
 func _let_go() -> void:
@@ -188,7 +266,7 @@ func _place(progress: float) -> void:
 	var drinking := mode == "drink"
 	var receiving := mode == "receive"
 	# Resting in her hoof: followed live while only held, from her resting hoof while drinking.
-	var hoof := _rest() if drinking or receiving else _hoof()
+	var hoof := _rest() if drinking or receiving or mode == "rest" else _hoof()
 	var rest_pos := hoof - frame * Vector3(0, 0.01 * s, 0)
 	var size := 1.0
 	var pos := rest_pos
@@ -208,7 +286,12 @@ func _place(progress: float) -> void:
 		# Taken out of her side, or handed over from where it was given; put away after.
 		var start := origin if origin.is_finite() else (_pocket() if pocket else rest_pos)
 		var away := _pocket() if pocket else (origin if origin.is_finite() else rest_pos)
-		if pocket: size = lerpf(0.15, 1.0, take) * lerpf(1.0, 0.15, stow)
+		# A sitting or lying drink is set down beside her; later sips start and end there.
+		var settle := resting and not _final
+		if settle:
+			away = _ground_spot()
+			if sips > 0: start = away
+		if pocket: size = lerpf(1.0 if origin.is_finite() else 0.15, 1.0, take) * (1.0 if settle else lerpf(1.0, 0.15, stow))
 		var base := start.lerp(rest_pos, take).lerp(away, stow)
 		var tilt_amount := smoothstep(LIFT_END - 0.04, LIFT_END + 0.08, progress) * (1.0 - smoothstep(SIP_END - 0.08, SIP_END, progress))
 		var tilt := deg_to_rad(52.0) * tilt_amount
@@ -222,10 +305,14 @@ func _place(progress: float) -> void:
 		orient = frame.slerp(tilted, lift) if lift > 0.0 else frame
 		level = lerpf(from_level, to_level, smoothstep(LIFT_END, SIP_END, progress))
 		_reach(progress, pos, orient, s)
+	elif mode == "rest":
+		pos = _ground_spot()
+		level = _level
+	_level = level
 	global_transform = Transform3D(orient.scaled(Vector3.ONE * s * size), pos)
 	CONTAINER.set_level(vessel, level)
 	if _steam != null and is_instance_valid(_steam):
-		_steam.emitting = (orient * Vector3.UP).dot(Vector3.UP) > 0.8 and not _releasing
+		_steam.emitting = (orient * Vector3.UP).dot(Vector3.UP) > 0.8 and not _releasing and (mode != "rest" or _rest_time < STEAM_SECONDS)
 
 
 ## Her foreleg follows the vessel from the moment she has it until it is being put away.
