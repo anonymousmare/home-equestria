@@ -1,0 +1,27 @@
+diff --git a/world/dev_tools.gd b/world/dev_tools.gd
+index 6028f8f..1801c23 100644
+--- a/world/dev_tools.gd
++++ b/world/dev_tools.gd
+@@ -9,7 +9,21 @@ const PLAYER_ARGS := ["--require-vr", "--seated", "--room-scale"]
+ 
+ 
+ static func enabled() -> bool:
+-	return not OS.has_feature("player_build")
++	return not OS.has_feature("player_build") or _local_override()
++
++
++## LOCAL PATCH ONLY (not in the repo): a player build turns the developer tools on when an empty
++## file named dev_tools.txt sits next to the executable. Logged once so godot.log says which.
++static var _override_known := false
++static var _override_on := false
++static func _local_override() -> bool:
++	if not _override_known:
++		_override_known = true
++		var marker := OS.get_executable_path().get_base_dir().path_join("dev_tools.txt")
++		_override_on = FileAccess.file_exists(marker)
++		if _override_on: print("[dev] developer tools ON by %s (player build)" % marker)
++		else: print("[dev] developer tools OFF: player build. Create an empty dev_tools.txt next to the .exe to turn them on.")
++	return _override_on
+ 
+ 
+ ## Exported debug builds for testers (dev 2026-10-20: "debug build so he can get all his ai
