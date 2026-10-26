@@ -67,6 +67,11 @@ func situation_block(id: String) -> String:
 	if belongings != null:
 		var carried: String = belongings.situation_line(id)
 		if carried != "": lines.append(carried)
+	# A potion Anon drank, as far as it shows (world/chemistry/player_potion_effects.gd).
+	var anon_potions: Node = host.get_tree().get_first_node_in_group("player_potions")
+	if anon_potions != null and anon_potions.has_method("situation_line"):
+		var shows: String = anon_potions.situation_line()
+		if shows != "": lines.append(shows)
 	if node.has_meta("relationship_runtime"):
 		lines.append(node.get_meta("relationship_runtime").prompt_for(id))
 	if entry.has("chat_since") and host._now() - float(entry.get("chat_last", -1e9)) < 120.0 and host._now() - float(entry.chat_since) > 150.0 \

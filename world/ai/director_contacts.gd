@@ -12,6 +12,7 @@ const CONTACT_BATCH_MAX := 6.0
 const CONTACT_COOLDOWN := 8.0
 const CONTACT_STALE := 20.0
 const CHEM := preload("res://world/chemistry/chem_catalog.gd")
+const BELONGINGS := preload("res://world/chemistry/pony_belongings.gd")
 
 var host: Node
 var _remembered_contacts:Dictionary={}
@@ -71,8 +72,6 @@ func _chemistry_event(kind: String, id: String) -> String:
 	var what := parts[1] if parts.size() > 1 else ""
 	var who := parts[2] if parts.size() > 2 and parts[2] != "" else "player"
 	var name: String = "you" if who == id else host._prompts._name(who)
-	var node: Variant = host.characters[id].node if host.characters.has(id) else null
-	var filly: bool = is_instance_valid(node) and node.get("identity") != null and bool(node.identity.get("filly"))
 	var label := CHEM.name_of(what).to_lower()
 	var felt := str(CHEM.reagent(what).get("felt", "nothing special"))
 	match parts[0]:
@@ -84,17 +83,11 @@ func _chemistry_event(kind: String, id: String) -> String:
 		"potion_refused":
 			return "%s just offered you a bottle of %s to drink. That is not something anypony should drink, so you refused it. React briefly in character." % [name, what]
 		"kept":
-			var line := "%s just gave you a bottle of %s to keep for later: %s. It is yours now; you can use it whenever you like with [use_item], or never. " % [name, label, str(CHEM.reagent(what).get("description", ""))]
-			if CHEM.reagent(what).has("blast"):
-				line += "You're a filly and explosives are just about the coolest thing ever. React with delight." if filly else "It's an explosive. As a grown-up you're more careful and less wowed by it than a foal would be; react in character, maybe with a word about being responsible."
-			else: line += "React briefly in character."
-			return line
+			return "%s just gave you a bottle of %s to keep: %s. It is yours now: use it whenever you like with [use_item], hand it back with [use_item: ITEM, player], or never touch it. React in character." % [name, label, BELONGINGS.about(what)]
 		"kaboom":
 			var blast := CHEM.reagent(what)
 			var by := "You just set off your %s" % label if who == id else "%s just set off some %s %s" % [name, label, "right next to you" if parts.size() > 3 and parts[3] == "you" else "nearby"]
-			var line := "%s: %s A harmless cartoon blast: maybe soot on your coat, nopony is hurt. " % [by, str(blast.get("description", "a bang."))]
-			line += "You're a filly: explosions are AWESOME. React with delight and excitement." if filly else "As a grown-up you're startled and less impressed than a foal would be; react in character, perhaps sensibly or a bit exasperated."
-			return line
+			return "%s: %s. A harmless cartoon blast: maybe soot on your coat, nopony is hurt. React in character." % [by, str(blast.get("description", "a bang")).trim_suffix(".")]
 	return ""
 
 

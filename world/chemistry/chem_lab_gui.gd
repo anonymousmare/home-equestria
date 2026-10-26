@@ -2,7 +2,8 @@ extends CanvasLayer
 ## Developer chemistry lab (dev 2026-10-26: "make the chemistry button like. h or some shit
 ## thatll open a dev gui"; the in-game chemistry set comes later). L opens it (H is hug). A
 ## dispenser of real elements, one beaker on a heater, the tgstation recipes, bottles (saved
-## with the world, pony_belongings.gd), "Give" for a nearby pony to drink one now
+## with the world, pony_belongings.gd), "Drink it yourself" (player_potion_effects.gd), "Give"
+## for a nearby pony to drink one now
 ## (pony_potion_effects.gd), "Give to keep" for her to carry it and use it later, maybe on
 ## somepony else, and "Set off" for explosives (chem_blast.gd). Heating an explosive in the
 ## beaker sets it off in front of you too.
@@ -12,13 +13,14 @@ const BEAKER := preload("res://world/chemistry/chem_beaker.gd")
 const EFFECTS := preload("res://world/chemistry/pony_potion_effects.gd")
 const BLAST := preload("res://world/chemistry/chem_blast.gd")
 const BELONGINGS := preload("res://world/chemistry/pony_belongings.gd")
+const PLAYER := preload("res://world/chemistry/player_potion_effects.gd")
 const TOGGLE_KEY := KEY_L
 const AMOUNTS := [1, 5, 10, 30]
 const BOTTLE_UNITS := 30.0
 ## Ponies this close to the player are offered in the "Give to" menu.
 const GIVE_RANGE := 8.0
-const KIND_ORDER := ["element", "compound", "medicine", "pyro", "potion"]
-const KIND_TITLES := {"element": "Dispenser", "compound": "Compounds", "medicine": "Medicine", "pyro": "Pyrotechnics", "potion": "Potions"}
+const KIND_ORDER := ["element", "drink", "compound", "medicine", "pyro", "potion"]
+const KIND_TITLES := {"element": "Dispenser", "drink": "Drinks", "compound": "Compounds", "medicine": "Medicine", "pyro": "Pyrotechnics", "potion": "Potions"}
 
 var game: Node
 var opened := false
@@ -135,6 +137,7 @@ func _build() -> void:
 	bottle_actions.add_child(keep)
 	bottle_actions.add_child(_button("Set off", _set_off))
 	var more_actions := HBoxContainer.new(); bottle_tab.add_child(more_actions)
+	more_actions.add_child(_button("Drink it yourself", _drink))
 	more_actions.add_child(_button("Pour back", _pour_back))
 	more_actions.add_child(_button("Discard", _discard))
 	more_actions.add_child(_button("Cure pony", _cure))
@@ -284,6 +287,16 @@ func _ahead(metres: float) -> Vector3:
 	return feet + forward.normalized() * metres + Vector3.UP * 0.3
 
 
+func _drink() -> void:
+	var index := _selected_bottle()
+	if index < 0: _say("Pick a bottle first.", Color("ff8080")); return
+	var result: Dictionary = PLAYER.drink(game, bottles[index].dose, str(bottles[index].get("from", "player")))
+	_say(str(result.text), Color("b3ffb3") if result.ok else Color("ffb380"))
+	if result.ok:
+		bottles.remove_at(index)
+		_save_bottles()
+
+
 func _pour_back() -> void:
 	var index := _selected_bottle()
 	if index < 0: return
@@ -313,7 +326,12 @@ func _save_bottles() -> void:
 	_refresh_bottles()
 
 
-## A pony handed Anon a bottle: reload them.
+## A pony handed Anon a bottle (pony_belongings.gd): reload them and say so.
+func received(text: String) -> void:
+	refresh_bottles()
+	_say(text, Color("ffb3e6"))
+
+
 func refresh_bottles() -> void:
 	var belongings: Node = get_tree().get_first_node_in_group("pony_belongings")
 	if belongings != null and belongings.has_world(): bottles = belongings.player_bottles()

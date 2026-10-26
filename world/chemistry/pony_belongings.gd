@@ -9,8 +9,14 @@ extends Node
 ##                                       set it off beside her
 ##   [use_item: ITEM, PONY_ID, secret]   slip a potion into her drink without saying what it is
 ##   [use_item: ITEM, PONY_ID, keep]     give it to her to keep for later
-##   [use_item: ITEM, player]            hand it to Anon (back into his bottles)
+##   [use_item: ITEM, player]            offer it to Anon: it goes into his bottles and he decides
+##                                       whether to drink it (player_potion_effects.gd)
+##   [use_item: ITEM, self] on a plain reagent (lye, saltpetre, ...) uses it up for what it is
+##                                       for: soap-making, the orchard, cleaning
 ## A use on somepony out of reach waits while she walks over (an approach is started for her).
+## Ponies take any reagent to keep; whether they want it, know what it is for (Applejack knows
+## lye makes soap; Apple Bloom may not) or hand it back is their own personality's call.
+## Zecora starts each world with two of her own brews to offer (STARTER).
 ## Anon's own bottles live here too ("chem_bottles"), so they are saved and ponies can give
 ## him theirs.
 const CATALOG := preload("res://world/chemistry/chem_catalog.gd")
@@ -23,6 +29,8 @@ const REACH := 2.6
 ## How long a use waits for her to get close.
 const WAIT_SECONDS := 45.0
 const MODES := ["", "drink", "secret", "keep", "set_off"]
+## Brews a pony has from the start of a world (she made them herself).
+const STARTER := {"zecora": [{"warmth_potion": 30.0}, {"focus_potion": 30.0}]}
 const MODE_SPELLINGS := {"give": "drink", "drink": "drink", "secret": "secret", "secretly": "secret", "slip": "secret", "sneak": "secret",
 	"hidden": "secret", "spike": "secret", "keep": "keep", "gift": "keep", "save": "keep", "later": "keep", "hand": "keep", "for_later": "keep",
 	"set_off": "set_off", "light": "set_off", "explode": "set_off", "detonate": "set_off", "blow_up": "set_off", "ignite": "set_off", "throw": "set_off"}
@@ -89,6 +97,13 @@ func items_for(pony_id: String) -> Array:
 	var state := _state()
 	if state.is_empty(): return []
 	if not state.get("pony_belongings") is Dictionary: state["pony_belongings"] = {}
+	if not bool(state.get("belongings_seeded", false)):
+		state["belongings_seeded"] = true
+		for owner: String in STARTER:
+			var start: Array = []
+			for dose: Dictionary in STARTER[owner]: start.append({"key": main_of(dose), "dose": dose.duplicate(), "from": owner})
+			state.pony_belongings[owner] = start
+		_changed()
 	var raw: Variant = state.pony_belongings.get(pony_id, [])
 	var items: Array = []
 	if raw is Array:
@@ -144,9 +159,18 @@ func situation_line(pony_id: String) -> String:
 	for row: Dictionary in items:
 		var main := main_of(row.dose)
 		var kind := "explosive" if BLAST.is_explosive(main) else ("potion" if CATALOG.drink_of(main) == "potion" else CATALOG.kind_of(main))
-		parts.append("%s = %s, %s (from %s)" % [row.key, label_of(row.dose), kind, EFFECTS.giver_name(game, row.from)])
-		if CATALOG.drink_of(main) != "no": parts[-1] += ": " + str(CATALOG.reagent(main).get("description", ""))
+		parts.append("%s = %s, %s (%s)" % [row.key, label_of(row.dose), kind, "you made it" if row.from == pony_id else "from " + EFFECTS.giver_name(game, row.from)])
+		parts[-1] += ": " + about(main)
 	return "- You are carrying, kept for later (use with [use_item: ITEM, TARGET] whenever you like, or never): " + "; ".join(parts)
+
+
+## "Sweet and sparkly ... Used for: soap-making ..." for prompts. Whether she knows the uses is
+## up to who she is.
+static func about(reagent: String) -> String:
+	var entry := CATALOG.reagent(reagent)
+	var text := str(entry.get("description", "")).trim_suffix(".")
+	if entry.has("uses"): text += "; commonly used for " + str(entry.uses) + " (whether you know that depends on who you are)"
+	return text
 
 
 # ------------------------------------------------------------------ Anon's bottles
@@ -180,8 +204,6 @@ func keep(pony: Node3D, dose: Dictionary, giver := "player") -> Dictionary:
 	if id.is_empty() or main.is_empty(): return {"ok": false, "text": "Nothing to give."}
 	if _state().is_empty(): return {"ok": false, "text": "No world is open."}
 	if bool(pony.get("sleeping")): return {"ok": false, "text": "%s is asleep." % who}
-	if CATALOG.drink_of(main) == "no" and not BLAST.is_explosive(main):
-		return {"ok": false, "text": "%s doesn't want a bottle of %s." % [who, CATALOG.name_of(main).to_lower()]}
 	var context: Node = game.get("world_context")
 	var bonds: Node = context.get("player_bonds") if context != null else null
 	if giver == "player" and bonds != null:
@@ -190,7 +212,7 @@ func keep(pony: Node3D, dose: Dictionary, giver := "player") -> Dictionary:
 			return {"ok": false, "text": "%s won't take anything from you right now." % who}
 	if not _add_item(id, dose, giver): return {"ok": false, "text": "%s can't carry any more." % who}
 	var from := EFFECTS.giver_name(game, giver)
-	context.record("gift", "%s gave you a bottle of %s to keep: %s. It is yours to use whenever you like." % [from, CATALOG.name_of(main).to_lower(), str(CATALOG.reagent(main).get("description", "")).trim_suffix(".")], [id], [id, giver])
+	context.record("gift", "%s gave you a bottle of %s to keep: %s. It is yours to use whenever you like." % [from, CATALOG.name_of(main).to_lower(), about(main)], [id], [id, giver])
 	if giver == "player" and bonds != null: bonds.experience(id, "gift", "kept_%d" % Time.get_ticks_usec())
 	if pony.has_signal("physical_reaction"): pony.emit_signal("physical_reaction", "kept:%s:%s" % [main, giver])
 	print("[chemistry] %s keeps %s from %s" % [id, label_of(dose), giver])
@@ -234,7 +256,7 @@ func _finish(user: String, actor: Node3D, key: String, recipient: String, mode: 
 			bottles.append({"dose": dose, "from": user})
 			set_player_bottles(bottles)
 			var lab: Node = game.get_node_or_null("ChemLab")
-			if lab != null and lab.has_method("refresh_bottles"): lab.refresh_bottles()
+			if lab != null and lab.has_method("received"): lab.received("%s gave you a %s." % [EFFECTS.display_name(actor), label_of(dose).to_lower()])
 			game.world_context.record("gift", "You gave Anon your %s." % label_of(dose).to_lower(), [user], [user, "player"])
 			result = {"ok": true, "text": "Handed it to Anon"}
 	elif explosive and mode != "keep":
@@ -243,6 +265,12 @@ func _finish(user: String, actor: Node3D, key: String, recipient: String, mode: 
 		result = {"ok": true, "text": "Set it off" + ("" if recipient == "self" else " beside " + EFFECTS.display_name(node))}
 	elif mode == "keep" and recipient != "self":
 		result = keep(node, dose, user)
+	elif CATALOG.drink_of(main) == "no":
+		if recipient == "self":
+			# Lye for soap, saltpetre for the orchard: used up doing what it is for, off screen.
+			game.world_context.record("used", "You used your %s%s." % [CATALOG.name_of(main).to_lower(), (" (" + str(CATALOG.reagent(main).uses) + ")") if CATALOG.reagent(main).has("uses") else ""], [user], [user])
+			result = {"ok": true, "text": "Used it up"}
+		else: result = keep(node, dose, user)   # Not a drink: handing it over means giving it.
 	else:
 		result = EFFECTS.give(game, node, dose, user, mode == "secret" and recipient != "self", actor)
 	if not bool(result.ok): _add_item(user, dose, str(row.from))   # Refused: she still has it.

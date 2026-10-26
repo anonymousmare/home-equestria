@@ -4,9 +4,8 @@ extends RefCounted
 ## appreciative"). Cartoon explosives only: a flash, a bang, a puff of smoke, sparks, glitter or
 ## confetti, and soot at worst. Nopony is hurt and nothing breaks.
 ##
-## Everypony within earshot reacts ("kaboom:<reagent>:<by>" physical reaction,
-## director_contacts.gd, which tells fillies they may love it and grown-ups to be more sensible)
-## and remembers it.
+## Everypony within earshot reacts in her own way ("kaboom:<reagent>:<by>:<you>" physical
+## reaction, director_contacts.gd) and remembers it.
 const CATALOG := preload("res://world/chemistry/chem_catalog.gd")
 const BANG := "res://world/audio/designed/environment/thunder_01.ogg"
 const FIZZ := "res://world/audio/designed/foley/steam_01.res"

@@ -645,7 +645,28 @@
       "viewers": [],
       "priority": 37,
       "provenance": "Anon's chemistry set (world/chemistry)",
-      "text": "Anon's chemistry set makes cartoon explosives: gunpowder (a bang and soot), thermite (a fountain of sparks), firework powder (bang and coloured sparkles), party popper powder (confetti) plus smoke and flash powder. They are loud and messy but nopony gets hurt. Fillies (the Cutie Mark Crusaders above all) think explosives are the most amazing thing ever; grown-ups are more careful with them and less impressed."
+      "text": "Anon's chemistry set makes cartoon explosives: gunpowder (a bang and soot), thermite (a fountain of sparks), firework powder (bang and coloured sparkles), party popper powder (confetti) plus smoke and flash powder. They are loud and messy but nopony gets hurt."
+    },
+    {
+      "id": "chemistry_reagents",
+      "scope": "authored",
+      "triggers": [
+        "lye",
+        "saltpetre",
+        "ammonia",
+        "acetone",
+        "hydrogen peroxide",
+        "sulfur",
+        "potash",
+        "reagent",
+        "reagents",
+        "chemical",
+        "chemicals"
+      ],
+      "viewers": [],
+      "priority": 34,
+      "provenance": "Anon's chemistry set (world/chemistry)",
+      "text": "Everyday chemicals have everyday uses in Equestria: lye makes soap and cleans (farm ponies like Applejack make their own soap with it), saltpetre and ash feed orchards and gardens, sulfur dusts apple trees against mildew, ammonia cleans barns, acetone removes nail polish and thins paint, hydrogen peroxide cleans cuts. Who knows this depends on the pony: farmers, crafters and Twilight Sparkle would; most foals would not."
     }
   ],
   "relationships": [
