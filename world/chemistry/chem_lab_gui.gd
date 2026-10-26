@@ -1,12 +1,17 @@
 extends CanvasLayer
 ## Developer chemistry lab (dev 2026-10-26: "make the chemistry button like. h or some shit
 ## thatll open a dev gui"; the in-game chemistry set comes later). L opens it (H is hug). A
-## dispenser of real elements, one beaker on a heater, the tgstation recipes, bottles, and
-## "Give" to hand a bottle to a nearby pony (world/chemistry/pony_potion_effects.gd).
+## dispenser of real elements, one beaker on a heater, the tgstation recipes, bottles (saved
+## with the world, pony_belongings.gd), "Give" for a nearby pony to drink one now
+## (pony_potion_effects.gd), "Give to keep" for her to carry it and use it later, maybe on
+## somepony else, and "Set off" for explosives (chem_blast.gd). Heating an explosive in the
+## beaker sets it off in front of you too.
 ## Developer builds only (game_player_rig.gd); desktop only.
 const CATALOG := preload("res://world/chemistry/chem_catalog.gd")
 const BEAKER := preload("res://world/chemistry/chem_beaker.gd")
 const EFFECTS := preload("res://world/chemistry/pony_potion_effects.gd")
+const BLAST := preload("res://world/chemistry/chem_blast.gd")
+const BELONGINGS := preload("res://world/chemistry/pony_belongings.gd")
 const TOGGLE_KEY := KEY_L
 const AMOUNTS := [1, 5, 10, 30]
 const BOTTLE_UNITS := 30.0
@@ -18,7 +23,7 @@ const KIND_TITLES := {"element": "Dispenser", "compound": "Compounds", "medicine
 var game: Node
 var opened := false
 var beaker: RefCounted = BEAKER.new()
-var bottles: Array = []   # {"dose": {id: units}, "name": String, "color": Color}
+var bottles: Array = []   # {"dose": {id: units}, "from": "player" or the pony who gave it}
 var _amount := 10
 var _cheat := false
 var _previous_mouse := Input.MOUSE_MODE_CAPTURED
@@ -45,6 +50,7 @@ func setup(host: Node) -> void:
 	game = host
 	layer = 115
 	beaker.reacted.connect(func(message: String): _say(message, Color("ffd27a")))
+	beaker.blasted.connect(func(reagent: String, units: float): BLAST.blast(game, _ahead(2.5), reagent, units, "player"))
 	_build()
 	_panel.hide()
 	set_process(false)
@@ -123,10 +129,15 @@ func _build() -> void:
 	_ponies = OptionButton.new(); _ponies.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _ponies.focus_mode = Control.FOCUS_NONE
 	give_row.add_child(_ponies)
 	var bottle_actions := HBoxContainer.new(); bottle_tab.add_child(bottle_actions)
-	bottle_actions.add_child(_button("Give", _give))
-	bottle_actions.add_child(_button("Pour back", _pour_back))
-	bottle_actions.add_child(_button("Discard", _discard))
-	bottle_actions.add_child(_button("Cure pony", _cure))
+	bottle_actions.add_child(_button("Give (drink now)", _give))
+	var keep := _button("Give to keep", _give_keep)
+	keep.tooltip_text = "She carries it and can use it later: drink it, give it to a friend, slip it to somepony, or set it off."
+	bottle_actions.add_child(keep)
+	bottle_actions.add_child(_button("Set off", _set_off))
+	var more_actions := HBoxContainer.new(); bottle_tab.add_child(more_actions)
+	more_actions.add_child(_button("Pour back", _pour_back))
+	more_actions.add_child(_button("Discard", _discard))
+	more_actions.add_child(_button("Cure pony", _cure))
 	var recipe_tab := VBoxContainer.new(); recipe_tab.name = "Recipes"; tabs.add_child(recipe_tab)
 	_recipes = ItemList.new(); _recipes.size_flags_vertical = Control.SIZE_EXPAND_FILL; recipe_tab.add_child(_recipes)
 	var recipe_actions := HBoxContainer.new(); recipe_tab.add_child(recipe_actions)
@@ -213,15 +224,10 @@ func _fill_recipe(batches: int) -> void:
 func _bottle(units: float) -> void:
 	var dose: Dictionary = beaker.pour(units)
 	if dose.is_empty(): _say("Nothing to bottle.", Color("ff8080")); return
-	var main := ""; var most := 0.0; var total := 0.0
-	for id: String in dose:
-		total += float(dose[id])
-		if float(dose[id]) > most: most = float(dose[id]); main = id
-	var name := "%s (%.0fu)" % [CATALOG.name_of(main), total] + (" + %d more" % (dose.size() - 1) if dose.size() > 1 else "")
-	bottles.append({"dose": dose, "name": name, "color": CATALOG.color_of(main)})
-	_refresh_bottles()
+	bottles.append({"dose": dose, "from": "player"})
+	_save_bottles()
 	_bottle_list.select(bottles.size() - 1)
-	_say("Bottled: " + name, Color("b3ffb3"))
+	_say("Bottled: " + BELONGINGS.label_of(dose), Color("b3ffb3"))
 
 
 func _selected_bottle() -> int:
@@ -239,20 +245,56 @@ func _give() -> void:
 	_say(str(result.text), Color("b3ffb3") if result.ok else Color("ffb380"))
 	if result.ok:
 		bottles.remove_at(index)
-		_refresh_bottles()
+		_save_bottles()
+
+
+func _give_keep() -> void:
+	var index := _selected_bottle()
+	if index < 0: _say("Pick a bottle first.", Color("ff8080")); return
+	var pony_index := _ponies.selected
+	var belongings: Node = get_tree().get_first_node_in_group("pony_belongings")
+	if belongings == null or pony_index < 0 or pony_index >= _pony_nodes.size() or not is_instance_valid(_pony_nodes[pony_index]):
+		_say("No pony nearby to give it to.", Color("ff8080")); return
+	var result: Dictionary = belongings.keep(_pony_nodes[pony_index], bottles[index].dose)
+	_say(str(result.text), Color("b3ffb3") if result.ok else Color("ffb380"))
+	if result.ok:
+		bottles.remove_at(index)
+		_save_bottles()
+
+
+## Explosive bottles go off a few steps in front of you.
+func _set_off() -> void:
+	var index := _selected_bottle()
+	if index < 0: _say("Pick a bottle first.", Color("ff8080")); return
+	var dose: Dictionary = bottles[index].dose
+	var explosive := BLAST.explosive_in(dose)
+	if explosive.is_empty(): _say("That's not an explosive.", Color("ff8080")); return
+	BLAST.blast(game, _ahead(3.0), explosive, float(dose[explosive]), "player")
+	_say("You set off the %s." % CATALOG.name_of(explosive).to_lower(), Color("ffd27a"))
+	bottles.remove_at(index)
+	_save_bottles()
+
+
+## A point `metres` ahead of the camera, at its feet height.
+func _ahead(metres: float) -> Vector3:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null: return Vector3.ZERO
+	var forward := -camera.global_basis.z; forward.y = 0.0
+	var feet: Vector3 = (game.player as Node3D).global_position if is_instance_valid(game.get("player")) else camera.global_position
+	return feet + forward.normalized() * metres + Vector3.UP * 0.3
 
 
 func _pour_back() -> void:
 	var index := _selected_bottle()
 	if index < 0: return
 	for id: String in bottles[index].dose: beaker.add(id, float(bottles[index].dose[id]))
-	bottles.remove_at(index); _refresh_bottles()
+	bottles.remove_at(index); _save_bottles()
 
 
 func _discard() -> void:
 	var index := _selected_bottle()
 	if index < 0: return
-	bottles.remove_at(index); _refresh_bottles()
+	bottles.remove_at(index); _save_bottles()
 
 
 func _cure() -> void:
@@ -264,11 +306,26 @@ func _cure() -> void:
 	_say("%s's potions wear off." % EFFECTS.display_name(_pony_nodes[pony_index]), Color("aaaaaa"))
 
 
+## Saved with the world (pony_belongings.gd "chem_bottles"); ponies can hand theirs to Anon.
+func _save_bottles() -> void:
+	var belongings: Node = get_tree().get_first_node_in_group("pony_belongings")
+	if belongings != null: belongings.set_player_bottles(bottles)
+	_refresh_bottles()
+
+
+## A pony handed Anon a bottle: reload them.
+func refresh_bottles() -> void:
+	var belongings: Node = get_tree().get_first_node_in_group("pony_belongings")
+	if belongings != null and belongings.has_world(): bottles = belongings.player_bottles()
+	_refresh_bottles()
+
+
 func _refresh_bottles() -> void:
 	_bottle_list.clear()
 	for bottle: Dictionary in bottles:
-		_bottle_list.add_item(str(bottle.name))
-		_bottle_list.set_item_custom_fg_color(_bottle_list.item_count - 1, (bottle.color as Color).lightened(0.3))
+		var from := str(bottle.get("from", "player"))
+		_bottle_list.add_item(BELONGINGS.label_of(bottle.dose) + ("" if from == "player" else "  · from " + EFFECTS.giver_name(game, from)))
+		_bottle_list.set_item_custom_fg_color(_bottle_list.item_count - 1, CATALOG.color_of(BELONGINGS.main_of(bottle.dose)).lightened(0.3))
 
 
 func _refresh_ponies() -> void:
@@ -300,6 +357,9 @@ func _pony_text(pony: Node, distance: float) -> String:
 	var under := ""
 	if effects != null and not effects.active.is_empty():
 		under = " · " + ", ".join((effects.active.keys() as Array).map(func(id: String) -> String: return CATALOG.name_of(id).to_lower()))
+	var belongings: Node = get_tree().get_first_node_in_group("pony_belongings")
+	var carried: Array = belongings.keys_for(EFFECTS.pony_id(pony)) if belongings != null else []
+	if not carried.is_empty(): under += " · carrying " + ", ".join(carried)
 	return "%s (%.1f m)%s" % [EFFECTS.display_name(pony), distance, under]
 
 
@@ -343,6 +403,7 @@ func _update_beaker() -> void:
 func open() -> void:
 	if opened: return
 	opened = true
+	refresh_bottles()
 	_previous_mouse = Input.mouse_mode
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if is_instance_valid(game.get("player")) and "controls_locked" in game.player: game.player.controls_locked = true

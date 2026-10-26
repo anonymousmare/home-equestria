@@ -42,7 +42,11 @@ func context(id: String, targets: Dictionary) -> Dictionary:
 	var story := _arrival_story()
 	if story != null and story.can_teleport_to_ponyville(id, executor.actor): capabilities.append("teleport_to_ponyville")
 	if story != null and id in HOUSE_GRANTERS and story.has_method("can_grant_home") and story.can_grant_home(): capabilities.append("give_house")
-	var result := {"capabilities": capabilities, "targets": targets, "locations": places, "place_labels": _place_labels()}
+	# Bottles she keeps from the chemistry set (world/chemistry/pony_belongings.gd).
+	var belongings: Node = get_tree().get_first_node_in_group("pony_belongings") if is_inside_tree() else null
+	var items: Array = belongings.keys_for(id) if belongings != null else []
+	if not items.is_empty(): capabilities.append("use_item")
+	var result := {"capabilities": capabilities, "targets": targets, "locations": places, "place_labels": _place_labels(), "items": items}
 	var callable_ponies: Array[String] = []
 	for other: String in targets:
 		if other == id or not executors.has(other) or not is_instance_valid(executors[other]): continue
@@ -113,6 +117,13 @@ func dispatch_house(id: String, action: Dictionary) -> void:
 		executor._report(action, "failed", "No house was given: Anon already has a home, or no free Ponyville house is loaded nearby")
 		return
 	executor._report(action, "completed", "%s is now Anon's own home for good: saved, marked on his map, and ponies can go there" % house.label())
+
+func dispatch_item(id: String, action: Dictionary, targets: Dictionary) -> void:
+	var executor: Node = executors.get(id)
+	if not is_instance_valid(executor): return
+	var belongings: Node = get_tree().get_first_node_in_group("pony_belongings")
+	if belongings == null: executor._report(action, "failed", "Nothing to use"); return
+	belongings.use(id, executor.actor, action, targets, executor)
 
 func dispatch_arrival(id: String, action: Dictionary) -> void:
 	var executor: Node = executors.get(id)

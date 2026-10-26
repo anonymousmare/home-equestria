@@ -14,6 +14,9 @@ var temperature := CATALOG.ROOM
 var target := CATALOG.ROOM
 var heater := false
 signal reacted(message: String)
+## A recipe with "blast" went off (gunpowder heated past 474 K, ...): `reagent` names the
+## explosive, `units` how much of it (chem_blast.gd sets it off).
+signal blasted(reagent: String, units: float)
 
 func total() -> float:
 	var sum := 0.0
@@ -103,6 +106,11 @@ func _run(reaction: Dictionary) -> bool:
 	var made: PackedStringArray = []
 	for id: String in reaction.makes: made.append("%.1fu %s" % [batches * float(reaction.makes[id]), CATALOG.name_of(id)])
 	var message := str(reaction.get("message", ""))
-	if bool(reaction.get("empties", false)): contents.clear()
+	var used := 0.0
+	for id: String in reaction.requires: used += batches * float(reaction.requires[id])
+	if bool(reaction.get("empties", false)):
+		for id: String in contents: used += float(contents[id])
+		contents.clear()
+	if reaction.has("blast"): blasted.emit(str(reaction.blast), used)
 	reacted.emit((message + " " if message != "" else "") + ("(" + ", ".join(made) + ")" if not made.is_empty() else ""))
 	return true

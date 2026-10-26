@@ -548,7 +548,7 @@
       "viewers": [],
       "priority": 38,
       "provenance": "Anon's chemistry set (world/chemistry)",
-      "text": "Potions are real in Equestria: Zecora brews remedies and potions from Everfree plants, and unicorn magic can do similar things. Anon has a chemistry set and can brew a few whimsical potions: love, warmth, energy, focus, sleek and invisibility. They are mild, harmless and wear off within minutes. A potion's feeling is real while it lasts, but it never changes who a pony is or what she will agree to."
+      "text": "Potions are real in Equestria: Zecora brews remedies and potions from Everfree plants, and unicorn magic can do similar things. Anon has a chemistry set and can brew a few whimsical potions: love, warmth, energy, focus, sleek and invisibility. They are mild, harmless and wear off within minutes. A potion can be drunk at once or kept in its bottle to drink later or give to somepony else. A potion's feeling is real while it lasts, but it never changes who a pony is or what she will agree to."
     },
     {
       "id": "potion_love",
@@ -561,7 +561,7 @@
       "viewers": [],
       "priority": 37,
       "provenance": "Hearts and Hooves Day; Anon's chemistry set",
-      "text": "A love potion leaves the drinker warm, giddy and fond of whoever is near for a few minutes, then it fades. On Hearts and Hooves Day the Cutie Mark Crusaders slipped Cheerilee and Big McIntosh a love poison from an old book; it made them sappy until it wore off, and everypony agreed real feelings can't be brewed."
+      "text": "A love potion gives the drinker a warm, giddy crush on the nearest grown-up for a few minutes, then it fades. On Hearts and Hooves Day the Cutie Mark Crusaders slipped Cheerilee and Big McIntosh a love poison from an old book; it made them sappy until it wore off, and everypony agreed real feelings can't be brewed."
     },
     {
       "id": "potion_warmth",
@@ -623,6 +623,29 @@
       "priority": 36,
       "provenance": "Anon's chemistry set (world/chemistry)",
       "text": "An invisibility potion makes the drinker completely invisible for a couple of minutes: others can still hear and bump into her. It is clear, frosty and tingles."
+    },
+    {
+      "id": "chemistry_explosives",
+      "scope": "authored",
+      "triggers": [
+        "explosive",
+        "explosives",
+        "gunpowder",
+        "thermite",
+        "firework",
+        "fireworks",
+        "firework powder",
+        "party popper",
+        "confetti",
+        "kaboom",
+        "explosion",
+        "boom",
+        "blow up"
+      ],
+      "viewers": [],
+      "priority": 37,
+      "provenance": "Anon's chemistry set (world/chemistry)",
+      "text": "Anon's chemistry set makes cartoon explosives: gunpowder (a bang and soot), thermite (a fountain of sparks), firework powder (bang and coloured sparkles), party popper powder (confetti) plus smoke and flash powder. They are loud and messy but nopony gets hurt. Fillies (the Cutie Mark Crusaders above all) think explosives are the most amazing thing ever; grown-ups are more careful with them and less impressed."
     }
   ],
   "relationships": [

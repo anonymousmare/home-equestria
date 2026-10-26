@@ -1,15 +1,16 @@
 extends RefCounted
 const CONTROLS := preload("res://world/ai/speech_controls.gd")
 const PLACES := preload("res://world/navigation/place_directory.gd")
+const BELONGINGS := preload("res://world/chemistry/pony_belongings.gd")
 ## Data only. Never turn model text into method names, code, paths or coordinates.
-const TYPES := ["look_at", "approach", "call_pony", "send_pony", "follow", "go_to", "step", "lead", "stay", "cancel", "resume_routine", "sit", "stand", "lie_down", "fly_to", "hover", "land", "loop_de_loop", "barrel_roll", "circle_over", "sonic_rainboom", "sit_on_seat", "go_home", "air_show", "relationship_offer", "relationship_answer", "request_space", "buck_player", "cuddle", "kiss_player", "wake_up", "teleport_to_ponyville", "send_letter", "give_house"]
+const TYPES := ["look_at", "approach", "call_pony", "send_pony", "follow", "go_to", "step", "lead", "stay", "cancel", "resume_routine", "sit", "stand", "lie_down", "fly_to", "hover", "land", "loop_de_loop", "barrel_roll", "circle_over", "sonic_rainboom", "sit_on_seat", "go_home", "air_show", "relationship_offer", "relationship_answer", "request_space", "buck_player", "cuddle", "kiss_player", "wake_up", "teleport_to_ponyville", "send_letter", "give_house", "use_item"]
 const SPEECH_LIMIT := 2880
 const STEP_DIRECTIONS := ["forward", "back", "left", "right", "away", "aside"]
 const STEP_SPELLINGS := {"forwards": "forward", "ahead": "forward", "backward": "back", "backwards": "back", "backward_s": "back",
 	"back_up": "back", "behind": "back", "sideways": "aside", "out_of_the_way": "aside", "out_of_way": "aside", "to_the_side": "aside",
 	"side": "aside", "away_from_player": "away", "away_from_you": "away"}
 const FIELDS := {
-	"teleport_to_ponyville": [], "give_house": [],
+	"teleport_to_ponyville": [], "give_house": [], "use_item": ["item_id", "recipient_id", "mode"],
 	"call_pony": ["pony_id"], "send_pony": ["pony_id", "target_id"],
 	"request_space": [], "buck_player": [], "cuddle": [], "kiss_player": [], "wake_up": [], "send_letter": [], "relationship_offer": ["kind", "activity", "location_id"], "relationship_answer": ["offer_id", "accept"],
 	"look_at": ["target_id", "duration_s"], "approach": ["target_id", "distance_m"],
@@ -45,7 +46,8 @@ const SIGNATURES := {
 	"step": [["direction", "aside"], ["distance_m", 1.5]],
 	"lead": [["target_id", null], ["location_id", null], ["wait_distance_m", 6.0]], "cancel": [["action_id", "current"]],
 	"fly_to": [["location_id", null]], "hover": [["duration_s", 10.0]], "circle_over": [["target_id", "player"]],
-	"relationship_offer": [["kind", null], ["activity", "walk"], ["location_id", ""]], "relationship_answer": [["offer_id", null], ["accept", null]]}
+	"relationship_offer": [["kind", null], ["activity", "walk"], ["location_id", ""]], "relationship_answer": [["offer_id", null], ["accept", null]],
+	"use_item": [["item_id", null], ["recipient_id", "self"], ["mode", ""]]}
 const PLAYER_NAMES := ["me", "you", "anon", "him", "the player", "anonymous"]
 const RANGES := {"duration_s": [0.2, 600.0], "distance_m": [1.0, 6.0], "wait_distance_m": [3.0, 15.0]}
 const ALIASES := {"lookat": "look_at", "look": "look_at", "goto": "go_to", "walk_to": "go_to", "go": "go_to", "flyto": "fly_to",
@@ -59,6 +61,8 @@ const ALIASES := {"lookat": "look_at", "look": "look_at", "goto": "go_to", "walk
 	"kiss": "kiss_player", "buck": "buck_player", "hug": "cuddle", "space": "request_space",
 	"letter": "send_letter", "send_a_letter": "send_letter", "write_letter": "send_letter", "letter_to_celestia": "send_letter", "send_letter_to_celestia": "send_letter", "fire_letter": "send_letter",
 	"give_home": "give_house", "grant_house": "give_house", "grant_home": "give_house", "assign_house": "give_house", "house_grant": "give_house",
+	"use": "use_item", "drink": "use_item", "give_item": "use_item", "give_potion": "use_item", "slip": "use_item", "slip_potion": "use_item",
+	"set_off": "use_item", "light": "use_item", "detonate": "use_item", "explode": "use_item", "item": "use_item",
 	"airshow": "air_show", "show": "air_show", "stunts": "air_show", "stunt_show": "air_show", "aerobatics": "air_show", "flying_show": "air_show",
 	"move": "step", "step_aside": "step", "move_aside": "step", "make_way": "step", "scoot": "step", "shift": "step"}
 ## One line per command for the prompt: the exact tag and what it does.
@@ -90,6 +94,7 @@ const TAG_HELP := {
 	"request_space": "[request_space] ask Anon to give you some space", "buck_player": "[buck_player] buck Anon away (only real, lasting anger at unwelcome contact)",
 	"cuddle": "[cuddle] cuddle up to Anon", "kiss_player": "[kiss_player] kiss Anon",
 	"send_letter": "[send_letter] write a quick note on a scroll and send it to Princess Celestia with your green fire",
+	"use_item": "[use_item: ITEM, TARGET] use something you are carrying (listed in your situation): TARGET self to drink it or light it yourself, or a PONY_ID or player to hand it over: a potion they drink, an explosive set off beside them. Add keep to give it to them for later ([use_item: ITEM, PONY_ID, keep]) or secret to slip a potion into their drink without saying what it is. You walk over first if needed; works alongside one movement",
 	"give_house": "[give_house] officially make a free Ponyville house Anon's own home, for good (the empty one he is in or beside, else the nearest free one); only when you give it, never just to talk about houses; works alongside one other action"}
 
 ## Turns a model's tag name into a TYPES entry ("" when it is not an action).
@@ -161,9 +166,11 @@ static func decode_tags(text: String, actor: String, turn: int, context: Diction
 		if name == "thought": impression.thought = value; continue
 		if type == "teleport_to_ponyville" and not value.is_empty():
 			dropped.append("teleport_to_ponyville takes no arguments"); continue
+		# [slip: ITEM, PONY_ID] is a secret use.
+		if type == "use_item" and name.begins_with("slip") and value.count(",") == 1: value += ", secret"
 		var action := _tag_action(type, value, turn, actions.size())
 		# A house grant moves nopony: it may come with her walk or follow.
-		var channel := "gaze" if type == "look_at" else ("grant" if type == "give_house" else "movement")
+		var channel := _channel(type)
 		var error := validate(action, context)
 		if error == "" and channel in channels: error = "Only one %s per reply" % ("look_at" if channel == "gaze" else "movement")
 		if error == "" and actions.size() >= 2: error = "At most two actions per reply"
@@ -178,6 +185,14 @@ static func decode_tags(text: String, actor: String, turn: int, context: Diction
 			return {"error": "This action requires spoken words before it can finish"}
 	return {"speech": speech, "actions": actions, "impression": preload("res://world/ai/impressions/pony_impressions.gd").sanitize(impression),
 		"dropped": dropped, "tags": true, "control_only": not silent and actions.is_empty() and CONTROLS.sanitize(speech).is_empty() and not text.strip_edges().is_empty()}
+
+## Which actions may share a reply: one gaze, one movement, one house grant, one item use.
+static func _channel(type: String) -> String:
+	match type:
+		"look_at": return "gaze"
+		"give_house": return "grant"
+		"use_item": return "item"
+	return "movement"
 
 static func _tag_action(type: String, value: String, turn: int, index: int) -> Dictionary:
 	var action := {"id": "t%d-%d-%s" % [turn, index, type], "type": type}
@@ -194,6 +209,11 @@ static func _tag_action(type: String, value: String, turn: int, index: int) -> D
 	var lone_place: bool = type == "lead" and args.size() == 1 and str(args[0]).to_lower() not in PLAYER_NAMES + ["player"]
 	if type in ["follow", "lead"] and (args.is_empty() or lone_place): args.push_front("player")
 	if type in ["follow", "lead", "approach", "look_at", "circle_over"] and not args.is_empty() and str(args[0]).to_lower() in PLAYER_NAMES: args[0] = "player"
+	if type == "use_item" and args.size() >= 2:
+		var to := str(args[1]).to_lower()
+		if to in ["me", "myself", "herself", "self", "i"]: args[1] = "self"
+		elif to in PLAYER_NAMES: args[1] = "player"
+	if type == "use_item" and args.size() >= 3: args[2] = BELONGINGS.mode_of(str(args[2]))
 	var fields: Array = SIGNATURES.get(type, [])
 	for i in fields.size():
 		var field: String = fields[i][0]
@@ -274,7 +294,7 @@ static func decode(text: String, actor: String, turn: int, context: Dictionary, 
 		if action.id in ids: return {"error": "Duplicate action IDs in reply"}
 		if action.type in ["relationship_offer","relationship_answer","request_space","buck_player","cuddle","teleport_to_ponyville","give_house"] and CONTROLS.sanitize(value.speech).is_empty():return {"error":"This action requires spoken words before it can finish"}
 		ids.append(action.id)
-		var channel := "gaze" if action.type == "look_at" else ("grant" if action.type == "give_house" else "movement")
+		var channel := _channel(str(action.type))
 		if channel in channels: return {"error": "One intention per channel per reply"}
 		channels.append(channel)
 	return {"speech": value.speech, "actions": value.actions.duplicate(true), "impression":preload("res://world/ai/impressions/pony_impressions.gd").sanitize(value.get("impression")),
@@ -327,6 +347,11 @@ static func validate(action: Variant, context: Dictionary) -> String:
 			if action.type == "follow" and action.get("formation") not in ["behind", "left", "right", "loose"]: return "Unknown formation"
 		"go_to":
 			if action.get("pace") not in ["walk", "trot"]: return "Pace must be walk or trot"
+		"use_item":
+			if not _id(action.get("item_id")) or action.item_id not in context.get("items", []): return "You are not carrying that"
+			var to: Variant = action.get("recipient_id", "self")
+			if not _id(to) or (to != "self" and not context.get("targets", {}).has(to)): return "Unknown target"
+			if str(action.get("mode", "")) not in BELONGINGS.MODES: return "Mode must be keep, secret or set_off"
 		"step":
 			if action.get("direction") not in STEP_DIRECTIONS: return "Direction must be forward, back, left, right, away or aside"
 			if not _number(action.get("distance_m"), 1.0, 6.0): return "Distance must be 1–6 metres"

@@ -1,10 +1,12 @@
 extends Node
 ## What a pony feels after drinking something Anon brewed (world/chemistry/chem_lab_gui.gd,
-## dev 2026-10-26: "i'd like to be able to give the ponies potions"). One of these rides on each
+## dev 2026-10-26: "i'd like to be able to give the ponies potions"), from his hoof or from
+## another pony's (pony_belongings.gd: a bottle she kept and gave on, maybe slipped in secretly). One of these rides on each
 ## pony who has drunk something, as a child named PotionEffects, while anything is active.
 ##
 ## - Her AI knows: the situation block carries the "potion_context" meta (director_prompts.gd),
-##   she reacts to the drink right away ("potion:<id>" physical reaction, director_contacts.gd),
+##   she reacts to the drink right away ("potion:<id>:<giver>:<secret>" physical reaction,
+##   director_contacts.gd),
 ##   and it is remembered (a world event when given, another when it wears off).
 ## - The six whimsical potions show: a soft glow in the potion's colour around her, love
 ##   potion flusters, invisibility hides every mesh she has (render layers 0) until it ends.
@@ -43,10 +45,12 @@ static func _now() -> float:
 	return Time.get_ticks_msec() / 1000.0
 
 
-## Offers `dose` ({reagent id: units}, one bottle) to `pony`. Returns {"ok": bool, "text": String}
-## for the lab window's log.
-static func give(game: Node, pony: Node3D, dose: Dictionary) -> Dictionary:
+## Offers `dose` ({reagent id: units}, one bottle) to `pony` to drink now. `giver` is "player"
+## (Anon) or the id of the pony handing it over (pony_belongings.gd [use_item]); `secret`: slipped
+## into her drink, so she does not know what it was. Returns {"ok": bool, "text": String}.
+static func give(game: Node, pony: Node3D, dose: Dictionary, giver := "player", secret := false, giver_node: Node3D = null) -> Dictionary:
 	var who := display_name(pony)
+	var from := "yourself" if giver == pony_id(pony) else giver_name(game, giver)
 	var units := 0.0
 	var undrinkable := 0.0
 	var adult := false
@@ -64,14 +68,16 @@ static func give(game: Node, pony: Node3D, dose: Dictionary) -> Dictionary:
 	var id := pony_id(pony)
 	var context: Node = game.get("world_context") if game != null else null
 	var bonds: Node = context.get("player_bonds") if context != null else null
+	var witnesses: Array = [id, giver]
 	if undrinkable / units >= UNDRINKABLE_SHARE:
+		# Slipped in or not, it tastes wrong at the first sip.
 		var names := _names(dose, "no")
-		if pony.has_signal("physical_reaction"): pony.emit_signal("physical_reaction", "potion_refused:" + names)
+		if pony.has_signal("physical_reaction"): pony.emit_signal("physical_reaction", "potion_refused:%s:%s" % [names, giver])
 		if context != null and id != "":
-			context.record("gift", "Anon offered you a bottle of %s to drink. That is not something to drink, so you refused." % names, [id, "player"], [id, "player"])
+			context.record("gift", "%s offered you a bottle of %s to drink. That is not something to drink, so you refused." % [from, names], witnesses, witnesses)
 		return {"ok": false, "text": "%s sniffs the %s and pushes it away. Not a drink!" % [who, names]}
 	if filly and adult: return {"ok": false, "text": "%s is a filly: not for her." % who}
-	if bonds != null and id != "" and not filly:
+	if giver == "player" and bonds != null and id != "" and not filly:
 		var record: Dictionary = bonds.record_for(id)
 		if bonds.anger(id) >= 35.0 or Time.get_unix_time_from_system() < float(record.get("cooldowns", {}).get("boundary", 0.0)):
 			if pony.has_method("set_action_gaze"): pony.set_action_gaze(null)
@@ -85,17 +91,31 @@ static func give(game: Node, pony: Node3D, dose: Dictionary) -> Dictionary:
 	var felt: PackedStringArray = []
 	for reagent: String in dose:
 		if float(dose[reagent]) < MIN_UNITS or CATALOG.drink_of(reagent) == "no": continue
-		effects.add(reagent, float(dose[reagent]))
+		effects.add(reagent, float(dose[reagent]), from, secret)
 		felt.append(str(CATALOG.reagent(reagent).get("felt", CATALOG.name_of(reagent).to_lower())))
 	var mouth: Vector3 = pony.get_node("Affection").mouth_point() if pony.get_node_or_null("Affection") != null else pony.global_position + Vector3.UP
 	SFX.play_event(pony, "prop_sip", {"intensity": 0.8}, mouth)
-	if pony.has_method("set_action_gaze") and game.has_method("_find_camera"): pony.set_action_gaze(game._find_camera(game.player))
-	if pony.has_signal("physical_reaction"): pony.emit_signal("physical_reaction", "potion:" + main)
+	if giver_node == null and giver == "player" and game.has_method("_find_camera"): giver_node = game._find_camera(game.player)
+	if pony.has_method("set_action_gaze") and giver_node != null: pony.set_action_gaze(giver_node)
+	if pony.has_signal("physical_reaction"): pony.emit_signal("physical_reaction", "potion:%s:%s:%s" % [main, giver, "secret" if secret else ""])
 	if context != null and id != "":
-		context.record("gift", "Anon gave you a bottle of %s and you drank it. You felt %s." % [_names(dose, ""), "; ".join(felt)], [id, "player"], [id, "player"])
-		if bonds != null: bonds.experience(id, "gift", "potion_%d" % Time.get_ticks_usec())
-	print("[chemistry] %s drank %.0fu (%s)" % [id, units, _names(dose, "")])
+		var drank := ("%s gave you something to drink and you drank it, not knowing what was in it" % from) if secret else ("%s gave you a bottle of %s and you drank it" % [from, _names(dose, "")])
+		if giver == id: drank = "You drank your bottle of %s" % _names(dose, "")
+		context.record("gift", "%s. You felt %s." % [drank, "; ".join(felt)], [id], witnesses)
+		if giver != "player" and giver != id and not secret:
+			context.record("gift", "You gave %s a bottle of %s to drink." % [who, _names(dose, "")], [giver], witnesses)
+		if giver == "player" and bonds != null: bonds.experience(id, "gift", "potion_%d" % Time.get_ticks_usec())
+	print("[chemistry] %s drank %.0fu (%s) from %s%s" % [id, units, _names(dose, ""), giver, " secretly" if secret else ""])
 	return {"ok": true, "text": "%s drinks the %s." % [who, _names(dose, "")]}
+
+
+## "Anon", or a pony's own name from her id.
+static func giver_name(game: Node, giver: String) -> String:
+	if giver == "player": return "Anon"
+	var mares: Array = game.get("mares") if game != null and game.get("mares") is Array else []
+	for pony: Variant in mares:
+		if is_instance_valid(pony) and pony_id(pony) == giver: return display_name(pony)
+	return giver.replace("_", " ").capitalize()
 
 
 ## "love potion and sugar": the names of the reagents in a dose, largest first.
@@ -109,9 +129,10 @@ static func _names(dose: Dictionary, only_drink: String) -> String:
 
 
 ## Ten units last the reagent's "minutes"; half a dose or less half as long, at most three times.
-func add(id: String, units: float) -> void:
+func add(id: String, units: float, from := "Anon", secret := false) -> void:
 	var seconds := float(CATALOG.reagent(id).get("minutes", 1)) * 60.0 * clampf(units / 10.0, 0.5, 3.0)
 	var row: Dictionary = active.get(id, {"until": _now(), "units": 0.0})
+	row.from = from; row.secret = secret
 	row.until = maxf(float(row.until), _now()) + seconds
 	row.units = float(row.units) + units
 	active[id] = row
@@ -134,8 +155,9 @@ func _process(delta: float) -> void:
 	var now := _now()
 	for id: String in active.keys():
 		if now < float(active[id].until): continue
+		var row: Dictionary = active[id]
 		active.erase(id)
-		_wore_off(id)
+		_wore_off(id, row)
 	_update_light()
 	_update_invisibility()
 	_update_context()
@@ -155,11 +177,12 @@ func _love(delta: float) -> void:
 	if pony.get("expressions") != null and pony.expressions.has_method("fluster"): pony.expressions.fluster(1.0)
 
 
-func _wore_off(id: String) -> void:
+func _wore_off(id: String, row: Dictionary) -> void:
 	var context: Node = game.get("world_context") if is_instance_valid(game) else null
 	var who := pony_id(pony)
 	if CATALOG.drink_of(id) == "potion" and context != null and who != "":
-		context.record("potion", "The %s Anon gave you has worn off; you feel like your usual self again." % CATALOG.name_of(id).to_lower(), [who], [who, "player"])
+		var what := ("whatever %s slipped you" % row.get("from", "somepony")) if bool(row.get("secret", false)) else ("the %s %s gave you" % [CATALOG.name_of(id).to_lower(), row.get("from", "Anon")])
+		context.record("potion", "%s%s has worn off; you feel like your usual self again." % [what.left(1).to_upper(), what.substr(1)], [who], [who])
 	print("[chemistry] %s: %s wore off" % [who, id])
 
 
@@ -210,6 +233,8 @@ func _update_context() -> void:
 	var lines: PackedStringArray = []
 	for id: String in active:
 		var left := maxi(1, ceili((float(active[id].until) - _now()) / 60.0))
-		lines.append("%s (about %d min left): you feel %s" % [CATALOG.name_of(id), left, str(CATALOG.reagent(id).get("felt", ""))])
+		var row: Dictionary = active[id]
+		var what := ("a drink from %s (you don't know what was in it)" % row.get("from", "somepony")) if bool(row.get("secret", false)) else ("%s from %s" % [CATALOG.name_of(id), row.get("from", "Anon")])
+		lines.append("%s (about %d min left): you feel %s" % [what, left, str(CATALOG.reagent(id).get("felt", ""))])
 	if lines.is_empty(): return
-	pony.set_meta(META, "- You drank something Anon gave you and are still feeling it. Let it colour how you act and talk, in your own way: " + " | ".join(lines))
+	pony.set_meta(META, "- You drank something and are still feeling it. Let it colour how you act and talk, in your own way: " + " | ".join(lines))
