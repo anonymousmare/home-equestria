@@ -167,6 +167,8 @@ func affection_allowed(actor: Node3D, kind: String) -> bool:
 	return bonds.contact(id,kind)
 
 func _contact(kind: String, id: String) -> void:
+	# Tased (world/inventory/assets/taser.gd): never welcome. Trust drops; words are her AI's.
+	if kind=="tased": bonds.unwanted_contact(id,"tased"); return
 	if kind!="flank_smack": return
 	var actor: Node3D = _actor(id)
 	if bonds.contact(id,"flank_touch"):

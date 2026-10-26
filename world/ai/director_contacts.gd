@@ -29,6 +29,7 @@ func _remember_touch(kind:String,id:String)->void:
 	if host._now()-float(_remembered_contacts.get(key,-100.))<10.:return
 	_remembered_contacts[key]=host._now()
 	var what:=kind if not kind.begins_with("petted:") else "petting your "+_pet_words(kind.get_slice(":",1))
+	if kind=="tased":what="he shot you with a taser; you fell and lay twitching for a few seconds"
 	host.world_context.record("physical_contact","The player made contact with you: "+what+". This alone does not establish how you felt about it.",[id],["player",id])
 
 
@@ -42,7 +43,7 @@ func _remember_outcome(event:Dictionary,id:String)->void:
 
 
 func reaction_chance(kind:String) -> float:
-	if kind in ["carried", "carried_away", "sprayed", "thrown"] or kind.begins_with("anon_resting") or _chemistry(kind): return 1.0
+	if kind in ["carried", "carried_away", "sprayed", "thrown", "tased"] or kind.begins_with("anon_resting") or _chemistry(kind): return 1.0
 	if kind.begins_with("petted"):return .3
 	match kind:
 		"flank_smack", "kiss_refused": return 1.0
@@ -123,7 +124,7 @@ func _on_physical_reaction(kind:String,id:String,deferred:bool=false,summary:=""
 	if not is_instance_valid(host.player_head) or not is_instance_valid(host.characters[id].node):return
 	if not host.awareness.can_hear(host.characters[id].node,host.player_head,host._earshot(id)):return
 	if host.state!="idle" or host.speech.state=="hearing":
-		if (kind in ["carried", "carried_away", "sprayed", "thrown"] or kind.begins_with("anon_resting") or _chemistry(kind)) and not deferred:
+		if (kind in ["carried", "carried_away", "sprayed", "thrown", "tased"] or kind.begins_with("anon_resting") or _chemistry(kind)) and not deferred:
 			host._pending_contacts[id] = {"kind": kind, "until": host._now() + 12.0}
 		return
 	if kind not in ["farewell","contact"] and host._reaction_rng.randf()>=reaction_chance(kind):return
@@ -142,6 +143,8 @@ func _on_physical_reaction(kind:String,id:String,deferred:bool=false,summary:=""
 	if kind == "thrown": event = "Anon just threw you from his hands. React briefly in your own voice to being tossed; surprise, protest or amusement should fit your character and relationship. Do not invent injuries or claim you have landed somewhere unless your current situation confirms it."
 	# Cuddling is her choice (dev 2026-09-28): the bed or couch only tells her he is lying there.
 	if kind.begins_with("anon_resting"): event = "Anon is lying down on the %s a few steps from you, resting. If you would like to cuddle with him, say so and use [cuddle]. It is just as fine to leave him be, or only say something." % kind.get_slice(":", 1)
+	# The taser (world/inventory/assets/taser.gd): she was down for a few seconds, cartoon-style.
+	if kind == "tased": event = "Anon just shot you with a taser. Your whole body locked up, you toppled over and lay twitching on the ground for a few seconds; you are getting back up now, shaken but unhurt. React in your own voice: shock, anger, hurt feelings or demanding an explanation should fit your character and how much you trust him. You may keep your distance from him, or leave."
 	if kind == "sprayed": event = "Anon just sprayed you with plain water from a small spray bottle. Your coat is damp where it hit. React briefly in character to the water."
 	# The chemistry set (world/chemistry): drinks, bottles to keep, things going bang.
 	if kind.begins_with("potion") or kind.begins_with("kept:") or kind.begins_with("kaboom:"): event = _chemistry_event(kind, id)

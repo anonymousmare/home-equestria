@@ -1,6 +1,8 @@
 extends RefCounted
 ## Cartoon throws own motion until wings catch or the native recovery finishes.
 ## No damage or ragdoll bones. The director owns the optional spoken reaction.
+## A taser hit (knock(), world/inventory/assets/taser.gd) is the same flight with no hands: she
+## locks up, tips over, lies limp and twitching for `stun` seconds, then gets up the usual way.
 const POSE = preload("res://world/characters/locomotion/pony_flight_pose.gd")
 const FLIGHT = preload("res://world/characters/locomotion/pony_flight.gd")
 const FK = preload("res://world/characters/locomotion/limb_solver.gd")
@@ -12,6 +14,8 @@ var state := "idle"
 var elapsed := 0.0
 var impact_count := 0
 var caught := false
+## Seconds a tased pony lies limp after landing (0: an ordinary throw).
+var stun := 0.0
 var _sounded := false
 var _start := Transform3D.IDENTITY
 var _initial: Array[Transform3D] = []
@@ -28,6 +32,16 @@ func active() -> bool: return state != "idle"
 
 func launch(momentum: Vector3) -> bool:
 	if not momentum.is_finite() or momentum.length() < 2.0 or not pony._held: return false
+	return _launch(momentum, 0.0, "thrown")
+
+## Taser (dev 2026-10-26: "id like a taser to ragdoll ponies with"): a short stiff tip-over away
+## from the shot with no wings to catch it, then `stun_seconds` limp on the ground. Works on a
+## pony who is standing, walking, sitting or lying; not one held, carried or asleep.
+func knock(momentum: Vector3, stun_seconds: float) -> bool:
+	if not momentum.is_finite() or pony._held or pony.get("sleeping") == true: return false
+	return _launch(momentum, maxf(stun_seconds, 0.0), "tased")
+
+func _launch(momentum: Vector3, stun_seconds: float, reaction: String) -> bool:
 	if pony.posture == null:
 		pony.posture = preload("res://world/characters/locomotion/pony_posture.gd").new()
 		pony.posture.bind(pony)
@@ -47,12 +61,14 @@ func launch(momentum: Vector3) -> bool:
 	if _pose == null: _pose = POSE.new(); _pose.bind(pony,false)
 	_pose.choose("glide")
 	state = "airborne"; elapsed = 0.0; _sounded = false; caught = false; impact_count = 0
-	if pony.has_signal("physical_reaction"): pony.emit_signal("physical_reaction", "thrown")
+	stun = stun_seconds
+	if stun > 0.0 and pony.get("expressions") != null: pony.expressions.touch("throw",0.0,1.0)
+	if pony.has_signal("physical_reaction"): pony.emit_signal("physical_reaction", reaction)
 	return true
 
 func cancel() -> void:
 	if not active(): return
-	state = "idle"
+	state = "idle"; stun = 0.0
 	pony.floor_snap_length = .3 * pony.body_scale
 	if pony._interaction == "THROWN": pony._interaction = ""
 	if pony.get("expressions") != null: pony.expressions.release_touch("throw")
@@ -140,19 +156,23 @@ func update(delta: float) -> void:
 		pony.move_and_slide()
 		pony.posture.update(delta)
 		_draw_faceplant()
+		if stun > 0.0 and elapsed <= .7 + stun:
+			_draw_limp()
+			return
 		if elapsed > .7:
 			pony.posture.request("stand")
 			# Eyes open again once the splat is over, not only after she is fully up.
 			if pony.get("expressions") != null: pony.expressions.release_touch("throw")
 		# Landed with no room to rise (a wall, furniture, another body): she would stay
 		# pinned flat forever. Slide to the nearest clear spot, else stand up in place.
-		if elapsed > STUCK_SECONDS and pony.posture.phase == "hold" and not _shuffle_clear() and elapsed > STUCK_SECONDS + 1.5:
+		var pinned := elapsed - stun
+		if pinned > STUCK_SECONDS and pony.posture.phase == "hold" and not _shuffle_clear() and pinned > STUCK_SECONDS + 1.5:
 			pony.posture.reset()
 		if not pony.posture.active():
 			cancel()
 			pony.reset_motion(pony.global_transform)
 		return
-	if elapsed > .18 and not _sounded and pony.identity != null and pony.identity.has_wings() and pony.identity.can_fly:
+	if elapsed > .18 and not _sounded and stun <= 0.0 and pony.identity != null and pony.identity.has_wings() and pony.identity.can_fly:
 		if pony.flight == null: pony.flight = FLIGHT.new(); pony.flight.bind(pony)
 		if pony.flight.catch_throw():
 			caught = true
@@ -206,6 +226,7 @@ func _draw_airborne(delta: float) -> void:
 	var amount := smoothstep(0.0,.18,elapsed)
 	for i in pony.corrected_pose.size():
 		pony.corrected_pose[i] = _initial[i].interpolate_with(pony.corrected_pose[i],amount)
+	if stun > 0.0: _twitch(pony.corrected_pose, .16)
 	pony.modifier.prepared = pony.corrected_pose
 	var pitch := clampf(atan2(pony.velocity.y,maxf(horizontal,.1)),-.65,.45)
 	var basis := Basis(Vector3.RIGHT,pitch)
@@ -224,7 +245,7 @@ func _squee() -> void:
 	_sound.position = Vector3(0,.45,-.4) * pony.body_scale
 	_sound.stream = SQUEES[randi() % SQUEES.size()]
 	_sound.pitch_scale = randf_range(1.05,1.18); _sound.play()
-	if pony.get("expressions") != null: pony.expressions.touch("throw",.85,.95)
+	if pony.get("expressions") != null: pony.expressions.touch("throw",0.0 if stun > 0.0 else .85,.95)
 
 func _draw_faceplant() -> void:
 	if elapsed > .6 or pony.posture._native_pose.is_empty(): return
@@ -247,3 +268,31 @@ func _draw_faceplant() -> void:
 		bottom = minf(bottom,(globals[leg.leaf] * Vector3(leg.sole)).dot(pony.posture._slope.y))
 	pivot.origin = pony.posture._slope.y * -bottom
 	pony.pivot.transform = pivot
+
+## Tased and down: the faceplant's prone pose with the head left hanging low (the muzzle-down
+## splat does not lift again), legs and neck twitching while the current runs, fading as it wears off.
+func _draw_limp() -> void:
+	if pony.posture._native_pose.is_empty(): return
+	var pose: Array[Transform3D] = pony.posture._native_pose.duplicate()
+	var down := smoothstep(.3,.6,elapsed)
+	for name in ["pony_neck1","pony_neck2","pony_head"]:
+		if not pony.joint_limits.names.has(name): continue
+		var bone: int = pony.joint_limits.names[name]
+		var flat: Basis = pony.joint_limits.pose_basis(name,Vector3(deg_to_rad(-14.0),0,0))
+		pose[bone].basis = pose[bone].basis.orthonormalized().slerp(flat.orthonormalized(),down).scaled_local(pose[bone].basis.get_scale())
+	# Hard jerks for the shock's first seconds, a last few small ones before she gathers herself.
+	var current := 1.0 - smoothstep(.7,.7 + stun * .75,elapsed)
+	_twitch(pose, .12 * current)
+	pony.corrected_pose = pose; pony.modifier.prepared = pose
+
+## Small random jerks (radians, at most `size`) on the legs and neck, each bone kept inside
+## its joint limits and at its own length.
+func _twitch(pose: Array[Transform3D], size: float) -> void:
+	if size <= .005: return
+	for name: String in pony.joint_limits.names:
+		if not (name.contains("Arm") or name.contains("femur") or name.contains("tibia") or name.contains("neck")): continue
+		var bone: int = pony.joint_limits.names[name]
+		if bone < 0 or bone >= pose.size() or randf() > .45: continue
+		var scale: Vector3 = pose[bone].basis.get_scale()
+		var jerk := Basis.from_euler(Vector3(randf_range(-size,size),randf_range(-size,size) * .4,randf_range(-size,size) * .4))
+		pose[bone].basis = pony.joint_limits.constrain(bone,pose[bone].basis.orthonormalized() * jerk).orthonormalized().scaled_local(scale)

@@ -15,10 +15,13 @@ const ART_SCRIPT := "res://world/painting/art_item.gd"
 static var _icons: Dictionary = {}
 const BOOK_SCENE := "res://world/books/book_item.tscn"
 const BOOK_STACK := 16
+## The taser builds its own scene and icon (no model or .svg to import, so a code patch carries it).
+const TASER := preload("res://world/inventory/assets/taser.gd")
 const ITEMS := {
 	"spray-bottle": {"name": "Water spray bottle", "description": "Aim and squeeze trigger / click to spray plain water.", "stack": 1},
 	"notebook": {"name": "Notebook", "description": "A small notebook for a day in Equestria.", "stack": 1},
 	"river-fish": {"name": "River fish", "description": "Caught from Ponyville's river.", "stack": 16},
+	"taser": {"name": "Taser", "description": "Aim and squeeze trigger / click: a pony it hits drops and twitches for a few seconds, then gets up. She will remember it. Never fires at a foal.", "stack": 1},
 }
 static func is_book(id: String) -> bool:
 	return id.begins_with("book:") and id.substr(5).is_valid_int()
@@ -51,6 +54,7 @@ static func scene(id: String) -> PackedScene:
 	if is_art(id): return load(ART_SCENE) as PackedScene
 	if FOOD.has(id): return FOOD.scene(id)
 	if SHOP.has(id): return SHOP.scene(id)
+	if id == "taser": return TASER.scene()
 	return load("res://world/inventory/assets/%s.tscn" % id) if ITEMS.has(id) else null
 ## Baked renders of the items themselves (tools/inventory/bake_item_icons.gd, dev 2026-10-01),
 ## before the drawn fallbacks below.
@@ -62,6 +66,7 @@ static func icon(id: String) -> Texture2D:
 		var art: Script = load(ART_SCRIPT) as Script
 		return art.call("icon", PAINTINGS.art_id(id)) as Texture2D if art != null else null
 	if _icons.has(id): return _icons[id]
+	if id == "taser": return TASER.icon()
 	var baked := BAKED % id.replace(":", "_")
 	if ResourceLoader.exists(baked) or FileAccess.file_exists(baked):
 		var picture: Image = RESOURCE_IMAGE.read(baked)

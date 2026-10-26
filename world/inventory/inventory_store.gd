@@ -133,7 +133,21 @@ func restore_document(doc: Dictionary) -> bool:
 				recovered[target].count += amount
 				recovered[source].count -= amount
 				if recovered[source].count == 0: recovered[source] = {}
-	return _commit(recovered, dropped, mini(MAX_BITS, int(migrated.get("bits", 0))))
+	if not _commit(recovered, dropped, mini(MAX_BITS, int(migrated.get("bits", 0)))): return false
+	_keep_always()
+	return true
+
+## Anon's own things that are always in the case (dev 2026-10-26: "id like a taser to ragdoll
+## ponies with"): a briefcase or save without one, in a slot or set down in the world, gets one.
+const ALWAYS := ["taser"]
+func _keep_always() -> void:
+	for id: String in ALWAYS:
+		var owned := false
+		for slot: Dictionary in slots:
+			if not slot.is_empty() and CATALOG.canonical(str(slot.id)) == id: owned = true
+		for token: String in loans:
+			if CATALOG.canonical(str(loans[token].get("id", ""))) == id: owned = true
+		if not owned: grant(id)
 
 ## Where an item goes: its old slot if it fits there, else a stack of the same thing with room,
 ## else the first empty slot. -1 when the case is full.

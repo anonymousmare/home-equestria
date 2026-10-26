@@ -724,6 +724,18 @@ func throw_pony(momentum: Vector3) -> bool:
 	return thrown.launch(momentum)
 
 
+## A taser hit from `from` (world/inventory/assets/taser.gd): she tips over away from it and lies
+## twitching for `stun_seconds` (pony_throw.gd knock). False when she cannot be knocked down now.
+func tase(from: Vector3, stun_seconds: float = 4.0) -> bool:
+	if thrown == null:
+		thrown = preload("res://world/characters/locomotion/pony_throw.gd").new()
+		thrown.bind(self)
+	if thrown.active(): return false
+	var away := global_position - from; away.y = 0.0
+	away = away.normalized() if away.length() > .01 else global_basis.z
+	return thrown.knock(away * 2.2 + Vector3.UP * 1.6, stun_seconds)
+
+
 func apply_body_impulse(world_impulse: Vector3) -> void:
 	_body_offset_velocity += global_basis.orthonormalized().inverse() * world_impulse.limit_length(0.3)
 

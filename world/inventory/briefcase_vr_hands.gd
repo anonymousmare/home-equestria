@@ -279,6 +279,10 @@ func _update_hand_step(side: String, sample: Dictionary, _delta: float):
 			host._pressed[side + "_easel"] = easel_pull
 		if item.get_meta("item_id", "") == "spray-bottle" and float(sample.trigger) > .7:
 			item.get_node("SprayBottle").spray()
+		if item.get_meta("item_id", "") == "taser":
+			var pull: bool = float(sample.trigger) > .7
+			if pull and not host._pressed.get(side + "_taser", false): item.get_node("Taser").fire()
+			host._pressed[side + "_taser"] = pull
 		if CATALOG.is_book(String(item.get_meta("item_id",""))):
 			_book_hand(side,item,sample,pose)
 		var mouth_near:bool=FOOD.mouth_near(item,host._mouth()) if FOOD.has(str(item.get_meta("item_id",""))) else item.global_position.distance_to(host._mouth())<.1

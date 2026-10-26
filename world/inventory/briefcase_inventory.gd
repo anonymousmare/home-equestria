@@ -798,6 +798,10 @@ func _input(event: InputEvent):
 		if held.desktop.get_meta("item_id", "") == "spray-bottle" and use_click:
 			if event.pressed: held.desktop.get_node("SprayBottle").spray()
 			get_viewport().set_input_as_handled(); return
+		# The taser shoots where you look, not along the barrel at the lower right of the view.
+		if held.desktop.get_meta("item_id", "") == "taser" and use_click:
+			if event.pressed: held.desktop.get_node("Taser").fire(camera.global_transform)
+			get_viewport().set_input_as_handled(); return
 		var desk_book:Node=held.desktop.get_node_or_null("BookItem") if CATALOG.is_book(String(held.desktop.get_meta("item_id",""))) else null
 		if desk_book!=null:
 			if desk_book.opened and event.pressed and event.button_index in [MOUSE_BUTTON_LEFT,MOUSE_BUTTON_WHEEL_DOWN,MOUSE_BUTTON_WHEEL_UP]:
@@ -985,6 +989,12 @@ func interaction_hint() -> Dictionary:
 		var item: Node3D = held[side]
 		if is_instance_valid(item) and item.get_meta("item_id", "") == "spray-bottle":
 			return {"target": item, "text": "Click · Spray water" if side == "desktop" else "Trigger · Spray water", "point": item.global_position + Vector3.UP * .15}
+		if is_instance_valid(item) and item.get_meta("item_id", "") == "taser":
+			var taser: Node = item.get_node_or_null("Taser")
+			var aimed: Dictionary = taser.aimed(camera.global_transform if side == "desktop" else Transform3D(Basis.IDENTITY, Vector3.INF)) if taser != null and taser.muzzle != null else {}
+			var pony: Node3D = aimed.get("pony")
+			var text := "Safety on · won't fire at a foal" if pony != null and taser.foal(pony) else ("Click · Fire taser" if side == "desktop" else "Trigger · Fire taser")
+			return {"target": item, "text": text, "point": item.global_position + Vector3.UP * .15}
 		if is_instance_valid(item) and item.get_meta("item_id", "") == "goods:easel":
 			return {"target": item, "text": "Click · Unfold easel on flat ground" if side == "desktop" else "Trigger · Unfold easel on flat ground", "point": item.global_position + Vector3.UP * .15}
 	return {}
