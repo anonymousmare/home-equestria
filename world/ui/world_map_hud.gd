@@ -1,6 +1,8 @@
 extends CanvasLayer
 ## Desktop/live editor map. The same atlas can later be hosted by a VR wrist viewport.
 signal expanded_changed(open: bool)
+## Ctrl+Shift+click on the map (world_map_view.gd), for the developer teleport.
+signal teleport_requested(world_xz: Vector2)
 const MAP_VIEW := preload("res://world/ui/world_map_view.gd")
 var tracked: Node3D
 var map: Control
@@ -35,6 +37,7 @@ func _ready() -> void:
 	map = MAP_VIEW.new(); map.preferences_path = preferences_path; panel.add_child(map)
 	map.marker_selected.connect(func(marker): _selected = marker; _update_status())
 	map.expand_requested.connect(func(): set_expanded(true))
+	map.teleport_requested.connect(func(xz: Vector2): teleport_requested.emit(xz))
 	toolbar = HBoxContainer.new(); toolbar.add_theme_constant_override("separation", 5); panel.add_child(toolbar)
 	_button("−", func(): map.zoom_at(0.8, map.size * 0.5))
 	_button("+", func(): map.zoom_at(1.25, map.size * 0.5))

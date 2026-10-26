@@ -199,6 +199,9 @@ func _ready() -> void:
 	luna_dream.name="LunaDream";add_child(luna_dream);luna_dream.setup(self)
 	wardrobe=preload("res://world/characters/accessories/pony_wardrobe.gd").new()
 	wardrobe.name="PonyWardrobe";add_child(wardrobe);wardrobe.setup(self)
+	# Chemistry bottles ponies keep and use later; Anon's own bottles (world/chemistry/pony_belongings.gd).
+	var belongings:Node=preload("res://world/chemistry/pony_belongings.gd").new()
+	belongings.name="PonyBelongings";add_child(belongings);belongings.setup(self)
 	var feeding:Node=preload("res://world/relationships/hand_feeding.gd").new()
 	feeding.name="HandFeeding";add_child(feeding);feeding.setup(self)
 	shop_world=preload("res://world/shop/shop_world.gd").new()

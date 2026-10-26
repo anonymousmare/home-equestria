@@ -60,6 +60,18 @@ func situation_block(id: String) -> String:
 		lines.append("- " + _company_line(node.get_meta("social_group")))
 	if outcomes != "": lines.append("Your action outcomes (not dialogue):\n" + outcomes)
 	if node.has_meta("hayburger_order_context"): lines.append(str(node.get_meta("hayburger_order_context")))
+	# A potion Anon gave her that is still working (world/chemistry/pony_potion_effects.gd).
+	if node.has_meta("potion_context"): lines.append(str(node.get_meta("potion_context")))
+	# Bottles she keeps for later and can use with [use_item] (world/chemistry/pony_belongings.gd).
+	var belongings: Node = host.get_tree().get_first_node_in_group("pony_belongings")
+	if belongings != null:
+		var carried: String = belongings.situation_line(id)
+		if carried != "": lines.append(carried)
+	# A potion Anon drank, as far as it shows (world/chemistry/player_potion_effects.gd).
+	var anon_potions: Node = host.get_tree().get_first_node_in_group("player_potions")
+	if anon_potions != null and anon_potions.has_method("situation_line"):
+		var shows: String = anon_potions.situation_line()
+		if shows != "": lines.append(shows)
 	if node.has_meta("relationship_runtime"):
 		lines.append(node.get_meta("relationship_runtime").prompt_for(id))
 	if entry.has("chat_since") and host._now() - float(entry.get("chat_last", -1e9)) < 120.0 and host._now() - float(entry.chat_since) > 150.0 \
