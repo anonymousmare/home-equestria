@@ -147,6 +147,8 @@ func _spawn_player() -> void:
 	if DEV.enabled() and not host.xr_active:
 		var lab: Node = load("res://world/chemistry/chem_lab_gui.gd").new()
 		lab.name = "ChemLab"; host.add_child(lab); lab.setup(host)
+		var hand: Node = load("res://world/chemistry/chem_hand.gd").new()
+		hand.name = "ChemHand"; host.add_child(hand); hand.setup(host)
 		var teleport: Node = load("res://world/debug/dev_teleport.gd").new()
 		teleport.name = "DevTeleport"; host.add_child(teleport); teleport.setup(host)
 	if DEV.enabled() and ResourceLoader.exists("res://world/debug/command_console.gd"):

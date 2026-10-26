@@ -60,6 +60,13 @@ static func _pet_words(region:String) -> String:
 	return {"barrel":"side","leg":"leg","wing":"wing","withers":"withers"}.get(region,region if region!="" else "coat")
 
 
+## " (tea is meant to be served hot, ...)" when the temperature does not suit the drink.
+static func _served(reagent: String, warmth: String) -> String:
+	var kelvin := {"scalding hot": 360.0, "steaming hot": 340.0, "hot": 322.0, "warm": 310.0, "room temperature": 300.0, "cool": 287.0, "cold": 278.0, "ice cold": 268.0}
+	var note := CHEM.serve_note(reagent, float(kelvin.get(warmth, 300.0)))
+	return " (" + note + ")" if note != "" else ""
+
+
 static func _chemistry(kind: String) -> bool:
 	return kind.begins_with("potion") or kind.begins_with("kept:") or kind.begins_with("kaboom:")
 
@@ -76,10 +83,14 @@ func _chemistry_event(kind: String, id: String) -> String:
 	var felt := str(CHEM.reagent(what).get("felt", "nothing special"))
 	match parts[0]:
 		"potion":
-			if who == id: return "You just drank your %s. You now feel %s. React briefly in character." % [label, felt]
+			var warmth := (parts[4] as String).replace("_", " ") if parts.size() > 4 and parts[4] != "" else ""
+			var served := " It was %s%s." % [warmth, _served(what, warmth)] if warmth != "" else ""
+			if who == id: return "You just drank your %s.%s You now feel %s. React briefly in character." % [label, served, felt]
 			if parts.size() > 3 and parts[3] == "secret":
-				return "%s just gave you something to drink and you drank it. You don't know what was in it, but now you feel %s. React briefly in character; you may wonder what it was." % [name, felt]
-			return "%s just gave you a bottle of %s and you drank it. You now feel %s. React briefly in character to the taste and the feeling." % [name, label, felt]
+				return "%s just gave you something to drink and you drank it.%s You don't know what was in it, but now you feel %s. React briefly in character; you may wonder what it was." % [name, served, felt]
+			return "%s just gave you a bottle of %s and you drank it.%s You now feel %s. React briefly in character to the taste, the temperature and the feeling." % [name, label, served, felt]
+		"potion_toohot":
+			return "%s just offered you a drink of %s, but it was scalding hot, so you pulled back without drinking it. React briefly in character." % [name, what]
 		"potion_refused":
 			return "%s just offered you a bottle of %s to drink. That is not something anypony should drink, so you refused it. React briefly in character." % [name, what]
 		"kept":

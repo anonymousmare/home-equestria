@@ -3,12 +3,14 @@ extends RefCounted
 ## rules, simplified: a recipe runs whenever all its reagents and catalysts are in the beaker
 ## and the temperature allows, converting as much as the scarcest reagent allows at once).
 const CATALOG := preload("res://world/chemistry/chem_catalog.gd")
-const CAPACITY := 100.0
+const DEFAULT_CAPACITY := 100.0
 ## How fast the heater moves the beaker toward its target, kelvin per second.
 const HEAT_RATE := 120.0
 ## Amounts smaller than this are dust and are dropped.
 const EPSILON := 0.01
 
+## What the vessel holds (chem_container.gd): a test tube mixes 10u, a beaker 100u.
+var capacity := DEFAULT_CAPACITY
 var contents: Dictionary = {}   # reagent id -> units
 var temperature := CATALOG.ROOM
 var target := CATALOG.ROOM
@@ -24,7 +26,7 @@ func total() -> float:
 	return sum
 
 func space() -> float:
-	return maxf(0.0, CAPACITY - total())
+	return maxf(0.0, capacity - total())
 
 ## Adds up to `units` of `id`; returns how much fit.
 func add(id: String, units: float) -> float:

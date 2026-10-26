@@ -5,6 +5,10 @@ extends RefCounted
 ## (world/chemistry/pony_potion_effects.gd). Temperatures are kelvin; a beaker starts at ROOM.
 const PATH := "res://world/chemistry/reagents.json"
 const ROOM := 300.0
+## A bottle left standing cools toward room temperature: half the difference every five minutes.
+const HALF_LIFE := 300.0
+## Too hot to drink: she pulls back instead.
+const SCALDING := 355.0
 static var _data: Dictionary = {}
 static var _ordered: Array = []
 
@@ -57,6 +61,41 @@ static func recipe_for(id: String) -> Dictionary:
 	for reaction: Dictionary in data().get("reactions", []):
 		if (reaction.get("makes", {}) as Dictionary).has(id): return reaction
 	return {}
+
+# ------------------------------------------------------------------ temperature
+
+## The temperature of a bottle that was `temp` K at unix time `t0`, now (`now`).
+static func cooled(temp: float, t0: float, now: float) -> float:
+	if not is_finite(temp): return ROOM
+	var elapsed := maxf(0.0, now - t0) if is_finite(t0) and t0 > 0.0 else 0.0
+	return ROOM + (temp - ROOM) * pow(0.5, elapsed / HALF_LIFE)
+
+
+## How it feels to drink: "scalding hot", "hot", "warm", "room temperature", "cool", "cold", "ice cold".
+static func temp_words(k: float) -> String:
+	if k >= SCALDING: return "scalding hot"
+	if k >= 335.0: return "steaming hot"
+	if k >= 318.0: return "hot"
+	if k >= 306.0: return "warm"
+	if k >= 292.0: return "room temperature"
+	if k >= 282.0: return "cool"
+	if k >= 275.0: return "cold"
+	return "ice cold"
+
+
+## "" when the temperature suits the drink; else a sentence on the mismatch ("tea is meant to be
+## served hot"). reagents.json "serve": the temperatures that suit it (hot, warm, cold).
+static func serve_note(reagent: String, k: float) -> String:
+	var serve: Variant = reagent(reagent).get("serve", [])
+	if not serve is Array or (serve as Array).is_empty(): return ""
+	for kind: Variant in serve:
+		match str(kind):
+			"hot": if k >= 318.0 and k < SCALDING: return ""
+			"warm": if k >= 304.0 and k < 340.0: return ""
+			"cold": if k <= 292.0: return ""
+	var wanted := " or ".join((serve as Array).map(func(kind: Variant) -> String: return str(kind)))
+	return "%s is meant to be served %s, but this is %s" % [name_of(reagent), wanted, temp_words(k)]
+
 
 ## "Sugar 2 · Epinephrine 1 · Gold 1 · above 330 K"
 static func recipe_text(reaction: Dictionary) -> String:

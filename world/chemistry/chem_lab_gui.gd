@@ -14,9 +14,9 @@ const EFFECTS := preload("res://world/chemistry/pony_potion_effects.gd")
 const BLAST := preload("res://world/chemistry/chem_blast.gd")
 const BELONGINGS := preload("res://world/chemistry/pony_belongings.gd")
 const PLAYER := preload("res://world/chemistry/player_potion_effects.gd")
+const CONTAINER := preload("res://world/chemistry/chem_container.gd")
 const TOGGLE_KEY := KEY_L
 const AMOUNTS := [1, 5, 10, 30]
-const BOTTLE_UNITS := 30.0
 ## Ponies this close to the player are offered in the "Give to" menu.
 const GIVE_RANGE := 8.0
 const KIND_ORDER := ["element", "drink", "compound", "medicine", "pyro", "potion"]
@@ -27,6 +27,12 @@ var opened := false
 var beaker: RefCounted = BEAKER.new()
 var bottles: Array = []   # {"dose": {id: units}, "from": "player" or the pony who gave it}
 var _amount := 10
+var _vessel_type := "beaker"
+var _vessel: OptionButton
+var _bottle_info: Label
+var _second := 0.0
+var _preview_pivot: Node3D
+var _preview_key := ""
 var _cheat := false
 var _previous_mouse := Input.MOUSE_MODE_CAPTURED
 var _panel: PanelContainer
@@ -97,11 +103,22 @@ func _build() -> void:
 
 	# Beaker and heater.
 	var middle := VBoxContainer.new(); middle.custom_minimum_size = Vector2(390, 0); columns.add_child(middle)
+	var vessel_row := HBoxContainer.new(); middle.add_child(vessel_row)
+	vessel_row.add_child(_label("Vessel"))
+	_vessel = OptionButton.new(); _vessel.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _vessel.focus_mode = Control.FOCUS_NONE
+	for type: String in CONTAINER.ORDER: _vessel.add_item("%s  (%du)" % [CONTAINER.name_of(type), int(CONTAINER.capacity(type))])
+	_vessel.select(CONTAINER.ORDER.find(_vessel_type))
+	_vessel.tooltip_text = "What you mix in, and what the bottle is when you bottle it."
+	_vessel.item_selected.connect(func(i: int): _set_vessel(CONTAINER.ORDER[i]))
+	vessel_row.add_child(_vessel)
 	var beaker_row := HBoxContainer.new(); middle.add_child(beaker_row)
 	_swatch = ColorRect.new(); _swatch.custom_minimum_size = Vector2(28, 28); beaker_row.add_child(_swatch)
-	_fill = ProgressBar.new(); _fill.max_value = BEAKER.CAPACITY; _fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_fill = ProgressBar.new(); _fill.max_value = beaker.capacity; _fill.show_percentage = false; _fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_fill.custom_minimum_size.y = 28; beaker_row.add_child(_fill)
-	var contents_scroll := ScrollContainer.new(); contents_scroll.custom_minimum_size.y = 170; middle.add_child(contents_scroll)
+	var body_row := HBoxContainer.new(); middle.add_child(body_row)
+	var contents_scroll := ScrollContainer.new(); contents_scroll.custom_minimum_size.y = 170; contents_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body_row.add_child(contents_scroll)
+	_make_preview(body_row)
 	_contents = VBoxContainer.new(); _contents.size_flags_horizontal = Control.SIZE_EXPAND_FILL; contents_scroll.add_child(_contents)
 	_temperature = _label(""); _temperature.add_theme_font_size_override("font_size", 18); middle.add_child(_temperature)
 	var heat_row := HBoxContainer.new(); middle.add_child(heat_row)
@@ -116,9 +133,10 @@ func _build() -> void:
 		var kelvin: float = preset[1]
 		presets.add_child(_button(preset[0], func(): _set_heat(kelvin)))
 	var actions := HBoxContainer.new(); middle.add_child(actions)
-	actions.add_child(_button("Bottle %du" % int(BOTTLE_UNITS), func(): _bottle(BOTTLE_UNITS)))
-	actions.add_child(_button("Bottle all", func(): _bottle(BEAKER.CAPACITY)))
-	actions.add_child(_button("Empty", func(): beaker.clear(); _say("Beaker emptied.", Color("aaaaaa"))))
+	actions.add_child(_button("Bottle it", func(): _bottle(1.0)))
+	actions.add_child(_button("Bottle half", func(): _bottle(0.5)))
+	actions.add_child(_button("Empty", func(): beaker.clear(); _say("Emptied.", Color("aaaaaa"))))
+	actions.add_child(_button("Clear log", func(): _log.clear()))
 	_log = RichTextLabel.new(); _log.scroll_following = true; _log.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_log.custom_minimum_size.y = 120; _log.bbcode_enabled = true; middle.add_child(_log)
 
@@ -126,6 +144,10 @@ func _build() -> void:
 	var tabs := TabContainer.new(); tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL; columns.add_child(tabs)
 	var bottle_tab := VBoxContainer.new(); bottle_tab.name = "Bottles"; tabs.add_child(bottle_tab)
 	_bottle_list = ItemList.new(); _bottle_list.size_flags_vertical = Control.SIZE_EXPAND_FILL; bottle_tab.add_child(_bottle_list)
+	_bottle_list.item_selected.connect(func(_i: int): _update_bottle_info())
+	_bottle_info = _label(""); _bottle_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottle_info.custom_minimum_size = Vector2(300, 52); _bottle_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottle_tab.add_child(_bottle_info)
 	var give_row := HBoxContainer.new(); bottle_tab.add_child(give_row)
 	give_row.add_child(_label("Give to"))
 	_ponies = OptionButton.new(); _ponies.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _ponies.focus_mode = Control.FOCUS_NONE
@@ -137,6 +159,9 @@ func _build() -> void:
 	bottle_actions.add_child(keep)
 	bottle_actions.add_child(_button("Set off", _set_off))
 	var more_actions := HBoxContainer.new(); bottle_tab.add_child(more_actions)
+	var hold := _button("Hold it", _hold)
+	hold.tooltip_text = "Take it in your hand: click to drink, aim at a pony to give her a drink, right-click to keep it for her or put it away."
+	more_actions.add_child(hold)
 	more_actions.add_child(_button("Drink it yourself", _drink))
 	more_actions.add_child(_button("Pour back", _pour_back))
 	more_actions.add_child(_button("Discard", _discard))
@@ -148,6 +173,41 @@ func _build() -> void:
 	fill.tooltip_text = "Puts five batches of the selected recipe's ingredients in the beaker (any reagent, dev cheat) and sets the heater."
 	recipe_actions.add_child(fill)
 	_fill_recipes()
+
+
+## A reagent's colour made readable on the dark window (carbon and iron are nearly black).
+static func _legible(color: Color) -> Color:
+	return Color.from_hsv(color.h, color.s * 0.8, maxf(color.v, 0.82))
+
+
+## A small turning model of the vessel you are mixing in, filled with what is in it.
+func _make_preview(parent: Control) -> void:
+	var holder := SubViewportContainer.new(); holder.stretch = true; holder.custom_minimum_size = Vector2(120, 170)
+	parent.add_child(holder)
+	var port := SubViewport.new(); port.size = Vector2i(120, 170); port.transparent_bg = true; port.own_world_3d = true
+	port.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	holder.add_child(port)
+	var cam := Camera3D.new(); cam.fov = 28; port.add_child(cam)
+	cam.position = Vector3(0, 0.075, 0.5)
+	var light := DirectionalLight3D.new(); light.rotation_degrees = Vector3(-40, 30, 0); port.add_child(light)
+	var env := WorldEnvironment.new(); env.environment = Environment.new()
+	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.environment.ambient_light_color = Color(0.85, 0.85, 0.95)
+	port.add_child(env)
+	_preview_pivot = Node3D.new(); port.add_child(_preview_pivot)
+
+
+func _update_preview() -> void:
+	if _preview_pivot == null: return
+	var fraction := clampf(beaker.total() / beaker.capacity, 0.0, 1.0)
+	var key := "%s|%s|%.2f" % [_vessel_type, beaker.color().to_html(), fraction]
+	if key == _preview_key: return
+	_preview_key = key
+	for child in _preview_pivot.get_children(): child.queue_free()
+	var model := CONTAINER.build(_vessel_type, beaker.color(), fraction)
+	model.position.y = -CONTAINER.height(_vessel_type) * 0.5 + 0.075
+	_preview_pivot.add_child(model)
+	if beaker.temperature >= 330.0: CONTAINER.add_steam(model)
 
 
 func _label(text: String) -> Label:
@@ -178,7 +238,7 @@ func _fill_dispenser() -> void:
 			var button := _button(CATALOG.name_of(id), func(): _dispense(id))
 			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			button.tooltip_text = str(CATALOG.reagent(id).get("description", ""))
-			button.add_theme_color_override("font_color", CATALOG.color_of(id).lightened(0.25))
+			button.add_theme_color_override("font_color", _legible(CATALOG.color_of(id)))
 			grid.add_child(button)
 
 
@@ -192,7 +252,7 @@ func _fill_recipes() -> void:
 		var result := ", ".join(makes.map(func(id: String) -> String: return CATALOG.name_of(id))) if not makes.is_empty() else str(reaction.get("message", reaction.id)).left(28)
 		_recipes.add_item("%s  ←  %s" % [result, CATALOG.recipe_text(reaction)])
 		_recipes.set_item_tooltip(_recipes.item_count - 1, str(reaction.get("message", "")))
-		if not makes.is_empty(): _recipes.set_item_custom_fg_color(_recipes.item_count - 1, CATALOG.color_of(makes[0]).lightened(0.3))
+		if not makes.is_empty(): _recipes.set_item_custom_fg_color(_recipes.item_count - 1, _legible(CATALOG.color_of(makes[0])))
 		_recipe_rows.append(reaction)
 
 
@@ -224,13 +284,44 @@ func _fill_recipe(batches: int) -> void:
 	_say("Added the ingredients for %s." % CATALOG.recipe_text(reaction), Color("dddddd"))
 
 
-func _bottle(units: float) -> void:
-	var dose: Dictionary = beaker.pour(units)
+## Fills a vessel (the dropdown's type) with `share` of what is in the beaker, at its temperature.
+func _bottle(share: float) -> void:
+	var dose: Dictionary = beaker.pour(beaker.total() * share)
 	if dose.is_empty(): _say("Nothing to bottle.", Color("ff8080")); return
-	bottles.append({"dose": dose, "from": "player"})
+	var bottle := {"dose": dose, "from": "player"}
+	bottle.merge(BELONGINGS.vessel_now(_vessel_type, beaker.temperature))
+	bottles.append(bottle)
 	_save_bottles()
 	_bottle_list.select(bottles.size() - 1)
-	_say("Bottled: " + BELONGINGS.label_of(dose), Color("b3ffb3"))
+	_update_bottle_info()
+	_say("Bottled: %s in a %s, %s" % [BELONGINGS.label_of(dose), CONTAINER.name_of(_vessel_type).to_lower(), CATALOG.temp_words(beaker.temperature)], Color("b3ffb3"))
+
+
+## The dropdown: what you mix in sets how much the beaker holds. A fuller one is trimmed to fit.
+func _set_vessel(type: String) -> void:
+	_vessel_type = CONTAINER.valid(type)
+	var wanted := CONTAINER.capacity(_vessel_type)
+	var total: float = beaker.total()
+	if total > wanted:
+		var share := wanted / total
+		for id: String in beaker.contents.keys(): beaker.contents[id] = float(beaker.contents[id]) * share
+		_say("The %s only holds %du: the rest was poured away." % [CONTAINER.name_of(_vessel_type).to_lower(), int(wanted)], Color("ffb380"))
+	beaker.capacity = wanted
+	_fill.max_value = wanted
+	_shown_contents = ""
+
+
+## Hands the selected bottle to Anon (chem_hand.gd) and closes the window.
+func _hold() -> void:
+	var index := _selected_bottle()
+	if index < 0: _say("Pick a bottle first.", Color("ff8080")); return
+	var hand: Node = get_tree().get_first_node_in_group("chem_hand")
+	if hand == null: _say("No hands available here.", Color("ff8080")); return
+	var bottle: Dictionary = bottles[index]
+	bottles.remove_at(index)
+	_save_bottles()
+	hand.hold(bottle)
+	close()
 
 
 func _selected_bottle() -> int:
@@ -244,7 +335,7 @@ func _give() -> void:
 	var pony_index := _ponies.selected
 	if pony_index < 0 or pony_index >= _pony_nodes.size() or not is_instance_valid(_pony_nodes[pony_index]):
 		_say("No pony nearby to give it to.", Color("ff8080")); return
-	var result: Dictionary = EFFECTS.give(game, _pony_nodes[pony_index], bottles[index].dose)
+	var result: Dictionary = EFFECTS.give(game, _pony_nodes[pony_index], bottles[index].dose, "player", false, null, bottles[index])
 	_say(str(result.text), Color("b3ffb3") if result.ok else Color("ffb380"))
 	if result.ok:
 		bottles.remove_at(index)
@@ -258,7 +349,7 @@ func _give_keep() -> void:
 	var belongings: Node = get_tree().get_first_node_in_group("pony_belongings")
 	if belongings == null or pony_index < 0 or pony_index >= _pony_nodes.size() or not is_instance_valid(_pony_nodes[pony_index]):
 		_say("No pony nearby to give it to.", Color("ff8080")); return
-	var result: Dictionary = belongings.keep(_pony_nodes[pony_index], bottles[index].dose)
+	var result: Dictionary = belongings.keep(_pony_nodes[pony_index], bottles[index].dose, "player", bottles[index])
 	_say(str(result.text), Color("b3ffb3") if result.ok else Color("ffb380"))
 	if result.ok:
 		bottles.remove_at(index)
@@ -290,7 +381,7 @@ func _ahead(metres: float) -> Vector3:
 func _drink() -> void:
 	var index := _selected_bottle()
 	if index < 0: _say("Pick a bottle first.", Color("ff8080")); return
-	var result: Dictionary = PLAYER.drink(game, bottles[index].dose, str(bottles[index].get("from", "player")))
+	var result: Dictionary = PLAYER.drink(game, bottles[index].dose, str(bottles[index].get("from", "player")), bottles[index])
 	_say(str(result.text), Color("b3ffb3") if result.ok else Color("ffb380"))
 	if result.ok:
 		bottles.remove_at(index)
@@ -341,9 +432,29 @@ func refresh_bottles() -> void:
 func _refresh_bottles() -> void:
 	_bottle_list.clear()
 	for bottle: Dictionary in bottles:
-		var from := str(bottle.get("from", "player"))
-		_bottle_list.add_item(BELONGINGS.label_of(bottle.dose) + ("" if from == "player" else "  · from " + EFFECTS.giver_name(game, from)))
-		_bottle_list.set_item_custom_fg_color(_bottle_list.item_count - 1, CATALOG.color_of(BELONGINGS.main_of(bottle.dose)).lightened(0.3))
+		_bottle_list.add_item(_bottle_text(bottle))
+		_bottle_list.set_item_custom_fg_color(_bottle_list.item_count - 1, _legible(CATALOG.color_of(BELONGINGS.main_of(bottle.dose))))
+	_update_bottle_info()
+
+
+## "Potion bottle · Love potion (30u) · warm · from Zecora"
+func _bottle_text(bottle: Dictionary) -> String:
+	var from := str(bottle.get("from", "player"))
+	return "%s · %s · %s%s" % [CONTAINER.name_of(str(bottle.get("container", CONTAINER.DEFAULT))), BELONGINGS.label_of(bottle.dose),
+		CATALOG.temp_words(BELONGINGS.temp_now(bottle)), "" if from == "player" else " · from " + EFFECTS.giver_name(game, from)]
+
+
+func _update_bottle_info() -> void:
+	var index := _selected_bottle()
+	if index < 0:
+		_bottle_info.text = "Pick a bottle. Bottles cool toward room temperature while they wait."
+		return
+	var bottle: Dictionary = bottles[index]
+	var temp := BELONGINGS.temp_now(bottle)
+	var main := BELONGINGS.main_of(bottle.dose)
+	var note := CATALOG.serve_note(main, temp)
+	_bottle_info.text = "%s: %.0f K (%.0f °C), %s.%s" % [CONTAINER.name_of(str(bottle.get("container", CONTAINER.DEFAULT))), temp, temp - 273.15, CATALOG.temp_words(temp), (" " + note + ".") if note != "" else ""]
+	if temp >= CATALOG.SCALDING: _bottle_info.text += " Too hot to drink."
 
 
 func _refresh_ponies() -> void:
@@ -388,6 +499,12 @@ func _say(text: String, color: Color) -> void:
 
 func _process(delta: float) -> void:
 	beaker.step(delta)
+	if _preview_pivot != null: _preview_pivot.rotate_y(delta * 0.9)
+	_second += delta
+	if _second >= 1.0:
+		_second = 0.0
+		for i in mini(bottles.size(), _bottle_list.item_count): _bottle_list.set_item_text(i, _bottle_text(bottles[i]))
+		_update_bottle_info()
 	_refresh -= delta
 	if _refresh > 0.0: return
 	_refresh = 0.2
@@ -397,6 +514,9 @@ func _process(delta: float) -> void:
 
 func _update_beaker() -> void:
 	_fill.value = beaker.total()
+	var fill_style := StyleBoxFlat.new(); fill_style.bg_color = beaker.color(); fill_style.set_corner_radius_all(4)
+	_fill.add_theme_stylebox_override("fill", fill_style)
+	_update_preview()
 	_swatch.color = beaker.color()
 	var t: float = beaker.temperature
 	_temperature.text = "%.0f K  (%.0f °C)%s" % [t, t - 273.15, "  · heating" if beaker.heater and absf(t - beaker.target) > 0.5 else ""]

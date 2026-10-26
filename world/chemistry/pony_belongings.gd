@@ -22,6 +22,8 @@ extends Node
 const CATALOG := preload("res://world/chemistry/chem_catalog.gd")
 const EFFECTS := preload("res://world/chemistry/pony_potion_effects.gd")
 const BLAST := preload("res://world/chemistry/chem_blast.gd")
+const CONTAINER := preload("res://world/chemistry/chem_container.gd")
+const DRINK := preload("res://world/chemistry/chem_drink_visual.gd")
 const MAX_CARRIED := 8
 const MAX_BOTTLES := 40
 ## Close enough to hand something over.
@@ -111,8 +113,31 @@ func items_for(pony_id: String) -> Array:
 			if not row is Dictionary or not row.get("key") is String: continue
 			var dose := _clean_dose(row.get("dose"))
 			if dose.is_empty(): continue
-			items.append({"key": str(row.key).left(40), "dose": dose, "from": str(row.get("from", "player")).left(64)})
+			var item := {"key": str(row.key).left(40), "dose": dose, "from": str(row.get("from", "player")).left(64)}
+			item.merge(_vessel_of(row))
+			items.append(item)
 	return items.slice(0, MAX_CARRIED)
+
+
+## The vessel fields of a saved row: container type, temperature in K and when it was that warm.
+## Rows from before vessels hold a potion bottle at room temperature.
+static func _vessel_of(row: Variant) -> Dictionary:
+	var source: Dictionary = row if row is Dictionary else {}
+	var temp: Variant = source.get("temp", CATALOG.ROOM)
+	var when: Variant = source.get("t0", 0.0)
+	return {"container": CONTAINER.valid(str(source.get("container", CONTAINER.DEFAULT))),
+		"temp": clampf(float(temp), 0.0, 1500.0) if temp is float or temp is int else CATALOG.ROOM,
+		"t0": float(when) if when is float or when is int else 0.0}
+
+
+## {"container", "temp", "t0"} for a bottle made now at `temp` K.
+static func vessel_now(container: String, temp: float) -> Dictionary:
+	return {"container": CONTAINER.valid(container), "temp": temp, "t0": Time.get_unix_time_from_system()}
+
+
+## The temperature of a saved vessel right now.
+static func temp_now(vessel: Dictionary) -> float:
+	return CATALOG.cooled(float(vessel.get("temp", CATALOG.ROOM)), float(vessel.get("t0", 0.0)), Time.get_unix_time_from_system())
 
 
 func _set_items(pony_id: String, items: Array) -> void:
@@ -128,14 +153,16 @@ func keys_for(pony_id: String) -> Array:
 	return items_for(pony_id).map(func(row: Dictionary) -> String: return row.key)
 
 
-func _add_item(pony_id: String, dose: Dictionary, from: String) -> bool:
+func _add_item(pony_id: String, dose: Dictionary, from: String, vessel := {}) -> bool:
 	var items := items_for(pony_id)
 	if items.size() >= MAX_CARRIED: return false
 	var base := main_of(dose)
 	var key := base; var n := 2
 	var taken: Array = items.map(func(row: Dictionary) -> String: return row.key)
 	while key in taken: key = "%s_%d" % [base, n]; n += 1
-	items.append({"key": key, "dose": dose, "from": from})
+	var row := {"key": key, "dose": dose, "from": from}
+	row.merge(_vessel_of(vessel))
+	items.append(row)
 	_set_items(pony_id, items)
 	return true
 
@@ -159,8 +186,12 @@ func situation_line(pony_id: String) -> String:
 	for row: Dictionary in items:
 		var main := main_of(row.dose)
 		var kind := "explosive" if BLAST.is_explosive(main) else ("potion" if CATALOG.drink_of(main) == "potion" else CATALOG.kind_of(main))
-		parts.append("%s = %s, %s (%s)" % [row.key, label_of(row.dose), kind, "you made it" if row.from == pony_id else "from " + EFFECTS.giver_name(game, row.from)])
+		var temp := temp_now(row)
+		var warmth := CATALOG.temp_words(temp)
+		parts.append("%s = %s in a %s, %s, %s (%s)" % [row.key, label_of(row.dose), CONTAINER.name_of(row.container).to_lower(), kind, warmth, "you made it" if row.from == pony_id else "from " + EFFECTS.giver_name(game, row.from)])
 		parts[-1] += ": " + about(main)
+		var mismatch := CATALOG.serve_note(main, temp)
+		if mismatch != "": parts[-1] += ". " + mismatch
 	return "- You are carrying, kept for later (use with [use_item: ITEM, TARGET] whenever you like, or never): " + "; ".join(parts)
 
 
@@ -183,21 +214,27 @@ func player_bottles() -> Array:
 	if raw is Array:
 		for row: Variant in raw:
 			var dose := _clean_dose(row.get("dose") if row is Dictionary else null)
-			if not dose.is_empty(): bottles.append({"dose": dose, "from": str(row.get("from", "player"))})
+			if not dose.is_empty():
+				var bottle := {"dose": dose, "from": str(row.get("from", "player"))}
+				bottle.merge(_vessel_of(row))
+				bottles.append(bottle)
 	return bottles
 
 
 func set_player_bottles(bottles: Array) -> void:
 	var state := _state()
 	if state.is_empty(): return
-	state["chem_bottles"] = bottles.slice(0, MAX_BOTTLES).map(func(row: Dictionary) -> Dictionary: return {"dose": row.dose, "from": str(row.get("from", "player"))})
+	state["chem_bottles"] = bottles.slice(0, MAX_BOTTLES).map(func(row: Dictionary) -> Dictionary:
+		var saved := {"dose": row.dose, "from": str(row.get("from", "player"))}
+		saved.merge(_vessel_of(row))
+		return saved)
 	_changed()
 
 
 # ------------------------------------------------------------------ giving to keep
 
 ## Anon (or a pony, `giver`) gives `pony` a bottle to keep. Returns {"ok", "text"}.
-func keep(pony: Node3D, dose: Dictionary, giver := "player") -> Dictionary:
+func keep(pony: Node3D, dose: Dictionary, giver := "player", vessel := {}) -> Dictionary:
 	var who := EFFECTS.display_name(pony)
 	var id := EFFECTS.pony_id(pony)
 	var main := main_of(dose)
@@ -210,9 +247,14 @@ func keep(pony: Node3D, dose: Dictionary, giver := "player") -> Dictionary:
 		var record: Dictionary = bonds.record_for(id)
 		if bonds.anger(id) >= 35.0 or Time.get_unix_time_from_system() < float(record.get("cooldowns", {}).get("boundary", 0.0)):
 			return {"ok": false, "text": "%s won't take anything from you right now." % who}
-	if not _add_item(id, dose, giver): return {"ok": false, "text": "%s can't carry any more." % who}
+	if not _add_item(id, dose, giver, vessel): return {"ok": false, "text": "%s can't carry any more." % who}
 	var from := EFFECTS.giver_name(game, giver)
-	context.record("gift", "%s gave you a bottle of %s to keep: %s. It is yours to use whenever you like." % [from, CATALOG.name_of(main).to_lower(), about(main)], [id], [id, giver])
+	var held := _vessel_of(vessel)
+	var warmth := CATALOG.temp_words(temp_now(held))
+	context.record("gift", "%s gave you a %s of %s (%s) to keep: %s. It is yours to use whenever you like." % [from, CONTAINER.noun(held.container), CATALOG.name_of(main).to_lower(), warmth, about(main)], [id], [id, giver])
+	# She takes it in her hoof for a moment.
+	var taken: Node3D = DRINK.hold(game, pony, held.container, EFFECTS._mix_color(dose), clampf(total_of(dose) / CONTAINER.capacity(held.container), 0.15, 1.0), temp_now(held))
+	if taken != null: taken.get_tree().create_timer(1.6).timeout.connect(taken.release)
 	if giver == "player" and bonds != null: bonds.experience(id, "gift", "kept_%d" % Time.get_ticks_usec())
 	if pony.has_signal("physical_reaction"): pony.emit_signal("physical_reaction", "kept:%s:%s" % [main, giver])
 	print("[chemistry] %s keeps %s from %s" % [id, label_of(dose), giver])
@@ -231,8 +273,11 @@ func use(user: String, actor: Node3D, action: Dictionary, targets: Dictionary, e
 	var node: Node3D = actor if recipient == "self" else (targets.get(recipient) as Node3D)
 	if not is_instance_valid(node): executor._report(action, "failed", "They are not here"); return
 	if recipient != "self" and actor.global_position.distance_to(node.global_position) > REACH:
+		# She carries it in her hoof on the way over.
+		var carried := _carry(user, actor, key)
 		_pending.append({"user": user, "key": key, "recipient": recipient, "mode": mode, "node": weakref(node), "actor": weakref(actor),
-			"executor": weakref(executor), "action": action, "until": Time.get_ticks_msec() + int(WAIT_SECONDS * 1000.0)})
+			"executor": weakref(executor), "action": action, "until": Time.get_ticks_msec() + int(WAIT_SECONDS * 1000.0),
+			"visual": weakref(carried) if carried != null else null})
 		if executor.get("movement") is Dictionary and (executor.movement as Dictionary).is_empty():
 			executor.submit([{"id": str(action.id) + "-near", "type": "approach", "target_id": recipient, "distance_m": 1.2}], {recipient: node}, int(executor.get("_latest_turn")))
 		executor._report(action, "accepted", "Walking over to hand it over")
@@ -240,10 +285,19 @@ func use(user: String, actor: Node3D, action: Dictionary, targets: Dictionary, e
 	_finish(user, actor, key, recipient, mode, node, executor, action)
 
 
-func _finish(user: String, actor: Node3D, key: String, recipient: String, mode: String, node: Node3D, executor: Node, action: Dictionary) -> void:
+func _carry(user: String, actor: Node3D, key: String) -> Node3D:
+	for row: Dictionary in items_for(user):
+		if row.key == key:
+			return DRINK.hold(game, actor, row.container, EFFECTS._mix_color(row.dose), clampf(total_of(row.dose) / CONTAINER.capacity(row.container), 0.15, 1.0), temp_now(row))
+	return null
+
+
+func _finish(user: String, actor: Node3D, key: String, recipient: String, mode: String, node: Node3D, executor: Node, action: Dictionary, carried: Node = null) -> void:
+	if is_instance_valid(carried) and carried.has_method("release"): carried.release()
 	var row := _take_item(user, key)
 	if row.is_empty(): executor._report(action, "failed", "You are not carrying that any more"); return
 	var dose: Dictionary = row.dose
+	var vessel := _vessel_of(row)
 	var main := main_of(dose)
 	var explosive := BLAST.is_explosive(main)
 	var result := {"ok": false, "text": ""}
@@ -253,7 +307,9 @@ func _finish(user: String, actor: Node3D, key: String, recipient: String, mode: 
 			result = {"ok": true, "text": "Set it off right beside Anon"}
 		else:
 			var bottles := player_bottles()
-			bottles.append({"dose": dose, "from": user})
+			var offered := {"dose": dose, "from": user}
+			offered.merge(vessel)
+			bottles.append(offered)
 			set_player_bottles(bottles)
 			var lab: Node = game.get_node_or_null("ChemLab")
 			if lab != null and lab.has_method("received"): lab.received("%s gave you a %s." % [EFFECTS.display_name(actor), label_of(dose).to_lower()])
@@ -264,16 +320,16 @@ func _finish(user: String, actor: Node3D, key: String, recipient: String, mode: 
 		BLAST.blast(game, at, main, total_of(dose), user, "" if recipient == "self" else recipient)
 		result = {"ok": true, "text": "Set it off" + ("" if recipient == "self" else " beside " + EFFECTS.display_name(node))}
 	elif mode == "keep" and recipient != "self":
-		result = keep(node, dose, user)
+		result = keep(node, dose, user, vessel)
 	elif CATALOG.drink_of(main) == "no":
 		if recipient == "self":
 			# Lye for soap, saltpetre for the orchard: used up doing what it is for, off screen.
 			game.world_context.record("used", "You used your %s%s." % [CATALOG.name_of(main).to_lower(), (" (" + str(CATALOG.reagent(main).uses) + ")") if CATALOG.reagent(main).has("uses") else ""], [user], [user])
 			result = {"ok": true, "text": "Used it up"}
-		else: result = keep(node, dose, user)   # Not a drink: handing it over means giving it.
+		else: result = keep(node, dose, user, vessel)   # Not a drink: handing it over means giving it.
 	else:
-		result = EFFECTS.give(game, node, dose, user, mode == "secret" and recipient != "self", actor)
-	if not bool(result.ok): _add_item(user, dose, str(row.from))   # Refused: she still has it.
+		result = EFFECTS.give(game, node, dose, user, mode == "secret" and recipient != "self", actor, vessel)
+	if not bool(result.ok): _add_item(user, dose, str(row.from), vessel)   # Refused: she still has it.
 	executor._report(action, "completed" if result.ok else "failed", str(result.text))
 
 
@@ -289,9 +345,14 @@ func _physics_process(delta: float) -> void:
 		var executor: Node = entry.executor.get_ref()
 		if not is_instance_valid(executor): _pending.erase(entry); continue
 		if not is_instance_valid(node) or not is_instance_valid(actor):
-			_pending.erase(entry); executor._report(entry.action, "failed", "They are gone"); continue
+			_pending.erase(entry); _drop_visual(entry); executor._report(entry.action, "failed", "They are gone"); continue
 		if actor.global_position.distance_to(node.global_position) <= REACH:
 			_pending.erase(entry)
-			_finish(entry.user, actor, entry.key, entry.recipient, entry.mode, node, executor, entry.action)
+			_finish(entry.user, actor, entry.key, entry.recipient, entry.mode, node, executor, entry.action, entry.visual.get_ref() if entry.visual != null else null)
 		elif now > int(entry.until):
-			_pending.erase(entry); executor._report(entry.action, "failed", "Could not get close enough to hand it over")
+			_pending.erase(entry); _drop_visual(entry); executor._report(entry.action, "failed", "Could not get close enough to hand it over")
+
+
+func _drop_visual(entry: Dictionary) -> void:
+	var carried: Variant = entry.visual.get_ref() if entry.visual != null else null
+	if is_instance_valid(carried) and carried.has_method("release"): carried.release()
