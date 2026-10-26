@@ -3,14 +3,14 @@ const CONTROLS := preload("res://world/ai/speech_controls.gd")
 const PLACES := preload("res://world/navigation/place_directory.gd")
 const BELONGINGS := preload("res://world/chemistry/pony_belongings.gd")
 ## Data only. Never turn model text into method names, code, paths or coordinates.
-const TYPES := ["look_at", "approach", "call_pony", "send_pony", "follow", "go_to", "step", "lead", "stay", "cancel", "resume_routine", "sit", "stand", "lie_down", "fly_to", "hover", "land", "loop_de_loop", "barrel_roll", "circle_over", "sonic_rainboom", "sit_on_seat", "go_home", "air_show", "relationship_offer", "relationship_answer", "request_space", "buck_player", "cuddle", "kiss_player", "wake_up", "teleport_to_ponyville", "send_letter", "give_house", "use_item"]
+const TYPES := ["look_at", "approach", "call_pony", "send_pony", "follow", "go_to", "step", "lead", "stay", "cancel", "resume_routine", "sit", "stand", "lie_down", "fly_to", "hover", "land", "loop_de_loop", "barrel_roll", "circle_over", "sonic_rainboom", "sit_on_seat", "go_home", "air_show", "relationship_offer", "relationship_answer", "request_space", "buck_player", "cuddle", "kiss_player", "wake_up", "teleport_to_ponyville", "send_letter", "give_house", "use_item", "pour_tea"]
 const SPEECH_LIMIT := 2880
 const STEP_DIRECTIONS := ["forward", "back", "left", "right", "away", "aside"]
 const STEP_SPELLINGS := {"forwards": "forward", "ahead": "forward", "backward": "back", "backwards": "back", "backward_s": "back",
 	"back_up": "back", "behind": "back", "sideways": "aside", "out_of_the_way": "aside", "out_of_way": "aside", "to_the_side": "aside",
 	"side": "aside", "away_from_player": "away", "away_from_you": "away"}
 const FIELDS := {
-	"teleport_to_ponyville": [], "give_house": [], "use_item": ["item_id", "recipient_id", "mode"],
+	"teleport_to_ponyville": [], "give_house": [], "use_item": ["item_id", "recipient_id", "mode"], "pour_tea": ["recipient_id"],
 	"call_pony": ["pony_id"], "send_pony": ["pony_id", "target_id"],
 	"request_space": [], "buck_player": [], "cuddle": [], "kiss_player": [], "wake_up": [], "send_letter": [], "relationship_offer": ["kind", "activity", "location_id"], "relationship_answer": ["offer_id", "accept"],
 	"look_at": ["target_id", "duration_s"], "approach": ["target_id", "distance_m"],
@@ -47,7 +47,7 @@ const SIGNATURES := {
 	"lead": [["target_id", null], ["location_id", null], ["wait_distance_m", 6.0]], "cancel": [["action_id", "current"]],
 	"fly_to": [["location_id", null]], "hover": [["duration_s", 10.0]], "circle_over": [["target_id", "player"]],
 	"relationship_offer": [["kind", null], ["activity", "walk"], ["location_id", ""]], "relationship_answer": [["offer_id", null], ["accept", null]],
-	"use_item": [["item_id", null], ["recipient_id", "self"], ["mode", ""]]}
+	"use_item": [["item_id", null], ["recipient_id", "self"], ["mode", ""]], "pour_tea": [["recipient_id", "self"]]}
 const PLAYER_NAMES := ["me", "you", "anon", "him", "the player", "anonymous"]
 const RANGES := {"duration_s": [0.2, 600.0], "distance_m": [1.0, 6.0], "wait_distance_m": [3.0, 15.0]}
 const ALIASES := {"lookat": "look_at", "look": "look_at", "goto": "go_to", "walk_to": "go_to", "go": "go_to", "flyto": "fly_to",
@@ -61,7 +61,7 @@ const ALIASES := {"lookat": "look_at", "look": "look_at", "goto": "go_to", "walk
 	"kiss": "kiss_player", "buck": "buck_player", "hug": "cuddle", "space": "request_space",
 	"letter": "send_letter", "send_a_letter": "send_letter", "write_letter": "send_letter", "letter_to_celestia": "send_letter", "send_letter_to_celestia": "send_letter", "fire_letter": "send_letter",
 	"give_home": "give_house", "grant_house": "give_house", "grant_home": "give_house", "assign_house": "give_house", "house_grant": "give_house",
-	"use": "use_item", "drink": "use_item", "give_item": "use_item", "give_potion": "use_item", "slip": "use_item", "slip_potion": "use_item",
+	"make_tea": "pour_tea", "brew_tea": "pour_tea", "serve_tea": "pour_tea", "tea": "pour_tea", "offer_tea": "pour_tea", "prepare_tea": "pour_tea", "fetch_tea": "pour_tea", "get_tea": "pour_tea", "pour_a_cup": "pour_tea", "pour_cup": "pour_tea", "pour_tea_for": "pour_tea", "make_a_cup_of_tea": "pour_tea", "use": "use_item", "drink": "use_item", "give_item": "use_item", "give_potion": "use_item", "slip": "use_item", "slip_potion": "use_item",
 	"set_off": "use_item", "light": "use_item", "detonate": "use_item", "explode": "use_item", "item": "use_item",
 	"airshow": "air_show", "show": "air_show", "stunts": "air_show", "stunt_show": "air_show", "aerobatics": "air_show", "flying_show": "air_show",
 	"move": "step", "step_aside": "step", "move_aside": "step", "make_way": "step", "scoot": "step", "shift": "step"}
@@ -95,6 +95,7 @@ const TAG_HELP := {
 	"cuddle": "[cuddle] cuddle up to Anon", "kiss_player": "[kiss_player] kiss Anon",
 	"send_letter": "[send_letter] write a quick note on a scroll and send it to Princess Celestia with your green fire",
 	"use_item": "[use_item: ITEM, TARGET] use something you are carrying (listed in your situation): TARGET self to drink it or light it yourself, or a PONY_ID or player to hand it over: a potion they drink, an explosive set off beside them. Add keep to give it to them for later ([use_item: ITEM, PONY_ID, keep]) or secret to slip a potion into their drink without saying what it is. You walk over first if needed; works alongside one movement",
+	"pour_tea": "[pour_tea] or [pour_tea: TARGET] pour a mug of hot tea from the tea set within reach, for yourself (default), for Anon (player) or for a pony nearby (PONY_ID): you walk to the tea set if needed, and drink it or hand it over. This is the only way to actually make or give tea: saying you will does nothing without it. Works alongside one movement",
 	"give_house": "[give_house] officially make a free Ponyville house Anon's own home, for good (the empty one he is in or beside, else the nearest free one); only when you give it, never just to talk about houses; works alongside one other action"}
 
 ## Turns a model's tag name into a TYPES entry ("" when it is not an action).
@@ -191,7 +192,7 @@ static func _channel(type: String) -> String:
 	match type:
 		"look_at": return "gaze"
 		"give_house": return "grant"
-		"use_item": return "item"
+		"use_item", "pour_tea": return "item"
 	return "movement"
 
 static func _tag_action(type: String, value: String, turn: int, index: int) -> Dictionary:
@@ -209,6 +210,10 @@ static func _tag_action(type: String, value: String, turn: int, index: int) -> D
 	var lone_place: bool = type == "lead" and args.size() == 1 and str(args[0]).to_lower() not in PLAYER_NAMES + ["player"]
 	if type in ["follow", "lead"] and (args.is_empty() or lone_place): args.push_front("player")
 	if type in ["follow", "lead", "approach", "look_at", "circle_over"] and not args.is_empty() and str(args[0]).to_lower() in PLAYER_NAMES: args[0] = "player"
+	if type == "pour_tea" and not args.is_empty():
+		var whom := str(args[0]).to_lower()
+		if whom in ["me", "myself", "herself", "self", "i"]: args[0] = "self"
+		elif whom in PLAYER_NAMES: args[0] = "player"
 	if type == "use_item" and args.size() >= 2:
 		var to := str(args[1]).to_lower()
 		if to in ["me", "myself", "herself", "self", "i"]: args[1] = "self"
@@ -347,6 +352,9 @@ static func validate(action: Variant, context: Dictionary) -> String:
 			if action.type == "follow" and action.get("formation") not in ["behind", "left", "right", "loose"]: return "Unknown formation"
 		"go_to":
 			if action.get("pace") not in ["walk", "trot"]: return "Pace must be walk or trot"
+		"pour_tea":
+			var cup_for: Variant = action.get("recipient_id", "self")
+			if not _id(cup_for) or (cup_for != "self" and not context.get("targets", {}).has(cup_for)): return "Unknown target"
 		"use_item":
 			if not _id(action.get("item_id")) or action.item_id not in context.get("items", []): return "You are not carrying that"
 			var to: Variant = action.get("recipient_id", "self")

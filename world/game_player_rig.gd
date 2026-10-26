@@ -94,8 +94,10 @@ func _spawn_player() -> void:
 		var fps_debug:=preload("res://world/ui/debug_fps.gd").new()
 		fps_debug.name="DebugFPS";host.add_child(fps_debug);fps_debug.setup(cam,host.xr_active)
 		if DEV.enabled():
-			var render_profiler: Node = load("res://world/debug/render_profiler.gd").new()
-			render_profiler.name = "RenderProfiler"; host.add_child(render_profiler)
+			# Not every build ships the private profiler and console scripts.
+			if ResourceLoader.exists("res://world/debug/render_profiler.gd"):
+				var render_profiler: Node = load("res://world/debug/render_profiler.gd").new()
+				render_profiler.name = "RenderProfiler"; host.add_child(render_profiler)
 			var measure: Node = load("res://world/debug/pony_measure.gd").new()
 			measure.name = "PonyMeasure"; host.add_child(measure)
 		var interactor: Node = INTERACTOR.new()
@@ -141,13 +143,17 @@ func _spawn_player() -> void:
 		if not host.xr_active:
 			var chat := preload("res://world/ui/chat_box.gd").new()
 			chat.name = "ChatBox"; host.add_child(chat); chat.setup(host.director, host.player, host.inventory)
+	# Anon's hand for chemistry vessels (a mug of tea from a tea set, a pony's gift): every build.
+	if not host.xr_active:
+		var hand: Node = load("res://world/chemistry/chem_hand.gd").new()
+		hand.name = "ChemHand"; host.add_child(hand); hand.setup(host)
 	# L: the chemistry lab (world/chemistry/chem_lab_gui.gd); Ctrl+Shift+click: teleport (dev_teleport.gd).
 	if DEV.enabled() and not host.xr_active:
 		var lab: Node = load("res://world/chemistry/chem_lab_gui.gd").new()
 		lab.name = "ChemLab"; host.add_child(lab); lab.setup(host)
 		var teleport: Node = load("res://world/debug/dev_teleport.gd").new()
 		teleport.name = "DevTeleport"; host.add_child(teleport); teleport.setup(host)
-	if DEV.enabled():
+	if DEV.enabled() and ResourceLoader.exists("res://world/debug/command_console.gd"):
 		var console: Node = load("res://world/debug/command_console.gd").new()
 		console.name = "CommandConsole"; host.add_child(console); console.setup(host)
 	# --spectator [1-4]: a second, smoothed/third-person window for recording.

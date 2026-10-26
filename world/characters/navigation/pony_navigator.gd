@@ -466,7 +466,7 @@ func _navigator_tick(delta: float) -> void:
 		_progress_position = _home
 		_initialized = true
 		if REST_PLACEMENT.passage(get_tree(), _home, pony.profile.radius): _idle_time = 0.0
-	var interrupted: bool = pony.motion_paused or pony._held or (pony.get(&"hoof_hold")!=null and pony.hoof_hold.active()) or not pony._interaction.is_empty()
+	var interrupted: bool = pony.motion_paused or pony._held or (pony.get(&"hoof_hold")!=null and pony.hoof_hold.active() and not pony.hoof_hold.walk_ok) or not pony._interaction.is_empty()
 	if interrupted:
 		_was_interrupted = true
 		state = State.INTERRUPTED

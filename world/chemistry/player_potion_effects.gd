@@ -27,15 +27,30 @@ var _label: Label
 var _tick := 0.0
 
 
-## Anon drinks `dose`; `giver` is who brewed or handed it ("player" for his own). Returns
-## {"ok", "text"} for the lab log.
-static func drink(game: Node, dose: Dictionary, giver := "player") -> Dictionary:
+## "" when Anon can drink `dose` (a bottle: "container", "temp", "t0"), else why not.
+static func check(dose: Dictionary, info := {}) -> String:
 	var units := 0.0
 	for id: String in dose: units += float(dose[id])
-	if units < EFFECTS.MIN_UNITS: return {"ok": false, "text": "The bottle is empty."}
+	if units < EFFECTS.MIN_UNITS: return "The bottle is empty."
 	var undrinkable := 0.0
 	for id: String in dose: if CATALOG.drink_of(id) == "no": undrinkable += float(dose[id])
-	if undrinkable / units >= EFFECTS.UNDRINKABLE_SHARE: return {"ok": false, "text": "You are not drinking %s." % EFFECTS._names(dose, "no")}
+	if undrinkable / units >= EFFECTS.UNDRINKABLE_SHARE: return "You are not drinking %s." % EFFECTS._names(dose, "no")
+	var temp := CATALOG.cooled(float(info.get("temp", CATALOG.ROOM)), float(info.get("t0", 0.0)), Time.get_unix_time_from_system())
+	if temp >= CATALOG.SCALDING: return "Ow! It's %s: far too hot to drink. Let it cool first." % CATALOG.temp_words(temp)
+	return ""
+
+
+## Anon drinks `dose`; `giver` is who brewed or handed it ("player" for his own). Returns
+## {"ok", "text"} for the lab log.
+static func drink(game: Node, dose: Dictionary, giver := "player", info := {}) -> Dictionary:
+	var units := 0.0
+	for id: String in dose: units += float(dose[id])
+	var problem := check(dose, info)
+	if problem != "": return {"ok": false, "text": problem}
+	var temp := CATALOG.cooled(float(info.get("temp", CATALOG.ROOM)), float(info.get("t0", 0.0)), Time.get_unix_time_from_system())
+	var main := ""; var most := 0.0
+	for id: String in dose:
+		if float(dose[id]) > most: most = float(dose[id]); main = id
 	var node: Node = game.get_node_or_null("PlayerPotions")
 	if node == null:
 		node = load("res://world/chemistry/player_potion_effects.gd").new()
@@ -51,7 +66,9 @@ static func drink(game: Node, dose: Dictionary, giver := "player") -> Dictionary
 	if giver != "player" and context != null:
 		context.record("gift", "Anon drank the %s you gave him." % EFFECTS._names(dose, ""), [giver], [giver, "player"])
 	print("[chemistry] Anon drank %.0fu (%s) from %s" % [units, EFFECTS._names(dose, ""), giver])
-	return {"ok": true, "text": "You drink the %s: %s." % [EFFECTS._names(dose, ""), "; ".join(felt)]}
+	var mismatch := CATALOG.serve_note(main, temp)
+	var taste := "It's %s%s. " % [CATALOG.temp_words(temp), (" (" + mismatch + ")") if mismatch != "" else ""]
+	return {"ok": true, "text": "You drink the %s. %sYou feel %s." % [EFFECTS._names(dose, ""), taste, "; ".join(felt)]}
 
 
 func add(id: String, units: float, from: String) -> void:

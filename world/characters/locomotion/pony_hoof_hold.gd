@@ -12,6 +12,12 @@ var neutral:=Vector3.ZERO
 var pose:Dictionary={}
 var release_weight:=0.0
 var grab_count:=0
+## A gesture that lets her keep walking (a cup in the hoof, chem_drink_visual.gd): navigation and
+## walking commands are not paused while it lasts, and the gait leaves the held leg out.
+var walk_ok:=false
+## Her body's transform at the last prepare(): a walking reach carries the softened goal with her
+## (the spring is capped at 1.1 m/s, a trot is faster, and the hoof trailed back to her rump).
+var _body_before:=Transform3D.IDENTITY
 var residual:=0.0
 var _delta:=1.0/60.0
 ## Scripted gesture (no hand): the knee is led forward and up, the cannon folds back at the
@@ -82,6 +88,30 @@ func kick(side:int,seconds:=.6)->bool:
 	_gesture_local=pony.global_transform.affine_inverse()*goal
 	return true
 
+## Holding a cup (world/chemistry/chem_drink_visual.gd): a forehoof reaches for `point` and keeps
+## following it (follow()) for `seconds`, as far as the joints allow. side 0 = left, 1 = right.
+func reach(side:int,seconds:float,point:Vector3,walking:=false)->bool:
+	if leg_index>=0 or pony._held or not pony.grounded() or not point.is_finite():return false
+	if pony.posture!=null and pony.posture.active():return false
+	var i:=-1
+	for k in pony.profile.legs.size():
+		if String(pony.profile.legs[k].name)==("FL" if side==0 else "FR"):i=k
+	if i<0:return false
+	var leg:Dictionary=pony.profile.legs[i]
+	var fk:=globals()
+	var hoof:Vector3=fk[leg.end].origin
+	if not begin({"leg":i,"bone":leg.leaf,"anchor":fk[leg.leaf].affine_inverse()*hoof},point):return false
+	gesture_left=seconds
+	walk_ok=walking
+	_body_before=pony.global_transform
+	_gesture_local=pony.global_transform.affine_inverse()*point
+	return true
+## Moves a reach() goal (a held cup) in her own frame, so turning her body carries it along.
+func follow(point:Vector3)->void:
+	if active() and gesture_left>0.0 and point.is_finite():_gesture_local=pony.global_transform.affine_inverse()*point
+## True while a scripted gesture such as reach() holds the hoof.
+func gesturing()->bool:return active() and gesture_left>0.0
+
 func _lift(side:int,seconds:float,toward:Vector3)->bool:
 	if leg_index>=0 or pony._held or not pony.grounded():return false
 	if pony.posture!=null and pony.posture.active():return false
@@ -116,11 +146,12 @@ func update(point:Vector3)->void:
 	if active() and point.is_finite():target=point
 func release()->void:
 	if leg_index<0:return
-	release_weight=1.0;pony.stop()
+	release_weight=1.0
+	if not walk_ok:pony.stop()
 ## Body-frame goal of a talking raise (INF otherwise).
 var _gesture_local:=Vector3.INF
 func reset()->void:
-	leg_index=-1;pose.clear();release_weight=0.0;residual=0.0;gesture_left=0.0;curl=0.0;curl_bone=-1;_gesture_local=Vector3.INF
+	walk_ok=false;leg_index=-1;pose.clear();release_weight=0.0;residual=0.0;gesture_left=0.0;curl=0.0;curl_bone=-1;_gesture_local=Vector3.INF
 func grip()->Transform3D:
 	if leg_index<0:return Transform3D.IDENTITY
 	var fk:=globals();var result:=fk[bone];result.origin=result*anchor;return result
@@ -134,6 +165,10 @@ func prepare(delta:float)->void:
 		if _gesture_local.is_finite():target=pony.global_transform*_gesture_local
 	if pony._held or not pony.grounded() or target.distance_to(grip().origin)>1.5:
 		release();return
+	if walk_ok:
+		softened=pony.global_transform*(_body_before.affine_inverse()*softened)
+		spring_velocity=pony.global_transform.basis*(_body_before.basis.inverse()*spring_velocity)
+	_body_before=pony.global_transform
 	var steps:=maxi(1,ceili(minf(delta,.05)*120.0))
 	var dt:=minf(delta,.05)/steps
 	for step in steps:

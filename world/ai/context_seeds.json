@@ -645,7 +645,7 @@
       "viewers": [],
       "priority": 37,
       "provenance": "Anon's chemistry set (world/chemistry)",
-      "text": "Anon's chemistry set makes cartoon explosives: gunpowder (a bang and soot), thermite (a fountain of sparks), firework powder (bang and coloured sparkles), party popper powder (confetti) plus smoke and flash powder. They are loud and messy but nopony gets hurt."
+      "text": "Anon's chemistry set makes cartoon explosives: gunpowder (a bang and soot), thermite (a fountain of sparks), firework powder (bang and coloured sparkles), party popper powder (confetti) plus smoke and flash powder. They are loud and messy but nopony gets hurt. They need no match, furnace or extra heat: a pony who carries one sets it off just by using it, even thermite (the real-world need for extreme heat does not apply to this set)."
     },
     {
       "id": "chemistry_reagents",
@@ -667,6 +667,23 @@
       "priority": 34,
       "provenance": "Anon's chemistry set (world/chemistry)",
       "text": "Everyday chemicals have everyday uses in Equestria: lye makes soap and cleans (farm ponies like Applejack make their own soap with it), saltpetre and ash feed orchards and gardens, sulfur dusts apple trees against mildew, ammonia cleans barns, acetone removes nail polish and thins paint, hydrogen peroxide cleans cuts. Who knows this depends on the pony: farmers, crafters and Twilight Sparkle would; most foals would not."
+    },
+    {
+      "id": "chemistry_tea",
+      "scope": "authored",
+      "triggers": [
+        "tea",
+        "teapot",
+        "tea set",
+        "cuppa",
+        "cup of tea",
+        "tea time",
+        "tea party"
+      ],
+      "viewers": [],
+      "priority": 39,
+      "provenance": "Anon's chemistry set (world/chemistry)",
+      "text": "Tea is poured from a tea set (the teapot on a little tray in cottages and cafes). You can only actually make or hand over tea with [pour_tea] while a tea set is within reach, and then the tea is hot and steaming. Offering tea in words alone does nothing: if no tea set is near, say so or invite them somewhere that has one. Hot tea cools over a few minutes."
     }
   ],
   "relationships": [

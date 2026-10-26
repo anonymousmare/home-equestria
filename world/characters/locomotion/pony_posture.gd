@@ -123,7 +123,11 @@ func request(value: String) -> bool:
 		if cuddle.enabled or cuddle.blend>0.0:
 			cuddle.end()
 	if value=="stand": intentional_rest=false; requested=value; return true
-	if pony._held or pony.carry.blend>0.0 or pony.hoof_hold.leg_index>=0: refusal="Cannot lower while held"; return false
+	if pony._held or pony.carry.blend>0.0: refusal="Cannot lower while held"; return false
+	if pony.hoof_hold.leg_index>=0:
+		# A cup in the hoof (chem_drink_visual.gd) lets go so she can lie down with her drink.
+		if not pony.hoof_hold.walk_ok: refusal="Cannot lower while held"; return false
+		pony.hoof_hold.release()
 	if not pony.grounded(): refusal="No ground support"; return false
 	if pony.actual_speed>.05 or pony._blend>.05: refusal="Wait until stopped"; return false
 	# dev (2026-09-16): let them sit anywhere. support() only measures the local slope

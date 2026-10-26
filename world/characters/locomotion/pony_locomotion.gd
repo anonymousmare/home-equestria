@@ -391,7 +391,7 @@ func back_up(speed: float) -> void:
 	_desired = back.normalized() * speed
 
 func set_desired_velocity(world_velocity: Vector3) -> void:
-	if hoof_hold.active():return
+	if hoof_hold.active() and not hoof_hold.walk_ok:return
 	if posture != null and posture.active() and world_velocity.length() > .05: posture.request("stand")
 	backing = false
 	_nav_motion = false
@@ -444,7 +444,7 @@ var _nav_gait_speed := 0.0
 
 
 func accept_navigation_motion(forward_speed: float, yaw_rate: float, mode: int, gait_speed := -1.0) -> void:
-	if hoof_hold.active(): return
+	if hoof_hold.active() and not hoof_hold.walk_ok: return
 	if not (is_finite(forward_speed) and is_finite(yaw_rate)):
 		stop()
 		return

@@ -46,6 +46,9 @@ func context(id: String, targets: Dictionary) -> Dictionary:
 	var belongings: Node = get_tree().get_first_node_in_group("pony_belongings") if is_inside_tree() else null
 	var items: Array = belongings.keys_for(id) if belongings != null else []
 	if not items.is_empty(): capabilities.append("use_item")
+	# A tea set within reach lets her pour tea (world/chemistry/chem_tea.gd).
+	var tea: Node = get_tree().get_first_node_in_group("chem_tea") if is_inside_tree() else null
+	if tea != null and tea.sets_near(executor.actor): capabilities.append("pour_tea")
 	var result := {"capabilities": capabilities, "targets": targets, "locations": places, "place_labels": _place_labels(), "items": items}
 	var callable_ponies: Array[String] = []
 	for other: String in targets:
@@ -117,6 +120,13 @@ func dispatch_house(id: String, action: Dictionary) -> void:
 		executor._report(action, "failed", "No house was given: Anon already has a home, or no free Ponyville house is loaded nearby")
 		return
 	executor._report(action, "completed", "%s is now Anon's own home for good: saved, marked on his map, and ponies can go there" % house.label())
+
+func dispatch_tea(id: String, action: Dictionary, targets: Dictionary) -> void:
+	var executor: Node = executors.get(id)
+	if not is_instance_valid(executor): return
+	var tea: Node = get_tree().get_first_node_in_group("chem_tea")
+	if tea == null: executor._report(action, "failed", "There is no tea to pour"); return
+	tea.pour_for(id, executor.actor, action, targets, executor)
 
 func dispatch_item(id: String, action: Dictionary, targets: Dictionary) -> void:
 	var executor: Node = executors.get(id)

@@ -202,6 +202,9 @@ func _ready() -> void:
 	# Chemistry bottles ponies keep and use later; Anon's own bottles (world/chemistry/pony_belongings.gd).
 	var belongings:Node=preload("res://world/chemistry/pony_belongings.gd").new()
 	belongings.name="PonyBelongings";add_child(belongings);belongings.setup(self)
+	# Tea sets: Anon pours with E, ponies with [pour_tea] (world/chemistry/chem_tea.gd).
+	var tea:Node=preload("res://world/chemistry/chem_tea.gd").new()
+	tea.name="ChemTea";add_child(tea);tea.setup(self)
 	var feeding:Node=preload("res://world/relationships/hand_feeding.gd").new()
 	feeding.name="HandFeeding";add_child(feeding);feeding.setup(self)
 	shop_world=preload("res://world/shop/shop_world.gd").new()
