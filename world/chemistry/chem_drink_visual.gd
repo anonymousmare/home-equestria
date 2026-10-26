@@ -92,6 +92,7 @@ static func _start(host: Node, pony: Node3D, container: String, liquid: Color, f
 		glow.position = node.vessel.get_meta("rim_local")
 		node.vessel.add_child(glow)
 	node._place(0.0)
+	node.reset_physics_interpolation()
 	return node
 
 
@@ -145,7 +146,9 @@ func _mouth() -> Vector3:
 	return pony.global_position + (-f.z) * 0.35 * _scale() + f.y * 0.85 * _scale()
 
 
-func _process(delta: float) -> void:
+## In the physics step, like the pony: the engine then smooths the vessel between steps exactly as it
+## smooths her, so it does not stutter beside her while she walks.
+func _physics_process(delta: float) -> void:
 	if not is_instance_valid(pony) or not pony.is_inside_tree() or pony.get("sleeping") == true:
 		_let_go(); queue_free(); return
 	_time += delta
@@ -225,7 +228,7 @@ func _reach(progress: float, pos: Vector3, orient: Basis, s: float) -> void:
 	var hold_on: bool = progress >= TAKE_END * 0.7 and progress < LOWER_END
 	var grip := pos + orient * Vector3(0, CONTAINER.height(str(vessel.get_meta("type"))) * 0.4 * s, 0)
 	if hold_on and not _reaching:
-		_reaching = pony.hoof_hold.reach(_side, total, grip)
+		_reaching = pony.hoof_hold.reach(_side, total, grip, true)
 	elif hold_on and _reaching:
 		pony.hoof_hold.follow(grip)
 	elif not hold_on and _reaching:

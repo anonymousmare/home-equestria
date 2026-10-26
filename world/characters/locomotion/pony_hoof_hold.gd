@@ -12,6 +12,9 @@ var neutral:=Vector3.ZERO
 var pose:Dictionary={}
 var release_weight:=0.0
 var grab_count:=0
+## A gesture that lets her keep walking (a cup in the hoof, chem_drink_visual.gd): navigation and
+## walking commands are not paused while it lasts, and the gait leaves the held leg out.
+var walk_ok:=false
 var residual:=0.0
 var _delta:=1.0/60.0
 ## Scripted gesture (no hand): the knee is led forward and up, the cannon folds back at the
@@ -84,7 +87,7 @@ func kick(side:int,seconds:=.6)->bool:
 
 ## Holding a cup (world/chemistry/chem_drink_visual.gd): a forehoof reaches for `point` and keeps
 ## following it (follow()) for `seconds`, as far as the joints allow. side 0 = left, 1 = right.
-func reach(side:int,seconds:float,point:Vector3)->bool:
+func reach(side:int,seconds:float,point:Vector3,walking:=false)->bool:
 	if leg_index>=0 or pony._held or not pony.grounded() or not point.is_finite():return false
 	if pony.posture!=null and pony.posture.active():return false
 	var i:=-1
@@ -96,6 +99,7 @@ func reach(side:int,seconds:float,point:Vector3)->bool:
 	var hoof:Vector3=fk[leg.end].origin
 	if not begin({"leg":i,"bone":leg.leaf,"anchor":fk[leg.leaf].affine_inverse()*hoof},point):return false
 	gesture_left=seconds
+	walk_ok=walking
 	_gesture_local=pony.global_transform.affine_inverse()*point
 	return true
 ## Moves a reach() goal (a held cup) in her own frame, so turning her body carries it along.
@@ -138,11 +142,12 @@ func update(point:Vector3)->void:
 	if active() and point.is_finite():target=point
 func release()->void:
 	if leg_index<0:return
-	release_weight=1.0;pony.stop()
+	release_weight=1.0
+	if not walk_ok:pony.stop()
 ## Body-frame goal of a talking raise (INF otherwise).
 var _gesture_local:=Vector3.INF
 func reset()->void:
-	leg_index=-1;pose.clear();release_weight=0.0;residual=0.0;gesture_left=0.0;curl=0.0;curl_bone=-1;_gesture_local=Vector3.INF
+	walk_ok=false;leg_index=-1;pose.clear();release_weight=0.0;residual=0.0;gesture_left=0.0;curl=0.0;curl_bone=-1;_gesture_local=Vector3.INF
 func grip()->Transform3D:
 	if leg_index<0:return Transform3D.IDENTITY
 	var fk:=globals();var result:=fk[bone];result.origin=result*anchor;return result
