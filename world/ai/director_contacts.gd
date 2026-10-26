@@ -143,8 +143,10 @@ func _on_physical_reaction(kind:String,id:String,deferred:bool=false,summary:=""
 	if kind == "thrown": event = "Anon just threw you from his hands. React briefly in your own voice to being tossed; surprise, protest or amusement should fit your character and relationship. Do not invent injuries or claim you have landed somewhere unless your current situation confirms it."
 	# Cuddling is her choice (dev 2026-09-28): the bed or couch only tells her he is lying there.
 	if kind.begins_with("anon_resting"): event = "Anon is lying down on the %s a few steps from you, resting. If you would like to cuddle with him, say so and use [cuddle]. It is just as fine to leave him be, or only say something." % kind.get_slice(":", 1)
-	# The taser (world/inventory/assets/taser.gd): she was down for a few seconds, cartoon-style.
-	if kind == "tased": event = "Anon just shot you with a taser. Your whole body locked up, you toppled over and lay twitching on the ground for a few seconds; you are getting back up now, shaken but unhurt. React in your own voice: shock, anger, hurt feelings or demanding an explanation should fit your character and how much you trust him. You may keep your distance from him, or leave."
+	# The taser (world/inventory/assets/taser.gd): she was down for a few seconds, cartoon-style. How she
+	# takes it is her personality's call, not a fixed penalty (dev 2026-10-26: "i assume pinkie pie or
+	# rainbow may give less of a shit"); her feeling tags carry any change in how she sees him.
+	if kind == "tased": event = "Anon just shot you with a taser. Your whole body locked up, you toppled over and lay twitching on the ground for a few seconds; you are getting back up now, unhurt. React briefly in your own voice, however your character and your relationship with him would really take it: laughing it off, a dare to do it again, revenge plans, protest, fear or hurt feelings are all possible."
 	if kind == "sprayed": event = "Anon just sprayed you with plain water from a small spray bottle. Your coat is damp where it hit. React briefly in character to the water."
 	# The chemistry set (world/chemistry): drinks, bottles to keep, things going bang.
 	if kind.begins_with("potion") or kind.begins_with("kept:") or kind.begins_with("kaboom:"): event = _chemistry_event(kind, id)

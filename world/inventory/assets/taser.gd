@@ -2,8 +2,8 @@ extends Node3D
 ## Anon's taser (dev 2026-10-26: "Hi id like a taser to ragdoll ponies with"). Click (desktop) or
 ## trigger (VR) fires two probes on thin wires up to RANGE metres. A pony they hit locks up, tips
 ## over away from you and lies limp and twitching (pony_throw.gd knock) while the current runs,
-## then gets up by herself. Cartoon: no injury. She does remember it, trusts Anon less and her AI
-## reacts (director_contacts.gd, relationship_runtime.gd "tased").
+## then gets up by herself. Cartoon: no injury. She remembers it, and her AI reacts in character
+## (director_contacts.gd "tased"): no fixed trust penalty, her own feeling tags decide.
 ## It never fires at a foal (identity.filly): the age rules (AGENT_HANDOFF.md) stay hard-coded.
 ## No model or icon files: the shape and the briefcase icon are built here, like spray_bottle.gd.
 const RANGE := 7.0
