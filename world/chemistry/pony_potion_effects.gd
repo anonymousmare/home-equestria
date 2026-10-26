@@ -109,8 +109,13 @@ static func give(game: Node, pony: Node3D, dose: Dictionary, giver := "player", 
 		felt.append(str(CATALOG.reagent(reagent).get("felt", CATALOG.name_of(reagent).to_lower())))
 	var mouth: Vector3 = pony.get_node("Affection").mouth_point() if pony.get_node_or_null("Affection") != null else pony.global_position + Vector3.UP
 	SFX.play_event(pony, "prop_sip", {"intensity": 0.8}, mouth)
-	DRINK.drink(game, pony, container, _mix_color(dose), clampf(units / CONTAINER.capacity(container), 0.15, 1.0), temp)
 	if giver_node == null and giver == "player" and game.has_method("_find_camera"): giver_node = game._find_camera(game.player)
+	# Where it comes from: her own things, or the hand of whoever gave it (Anon's view, or a pony).
+	var pocket := giver == id
+	var from_point := Vector3.INF
+	if not pocket and giver_node != null and is_instance_valid(giver_node):
+		from_point = giver_node.global_position + (-giver_node.global_basis.z * 0.45 + Vector3.DOWN * 0.25 if giver == "player" else Vector3.UP * 0.7)
+	DRINK.drink(game, pony, container, _mix_color(dose), clampf(units / CONTAINER.capacity(container), 0.15, 1.0), temp, 4.2, 0.0, from_point, pocket)
 	if pony.has_method("set_action_gaze") and giver_node != null: pony.set_action_gaze(giver_node)
 	if pony.has_signal("physical_reaction"): pony.emit_signal("physical_reaction", "potion:%s:%s:%s:%s" % [main, giver, "secret" if secret else "", warmth.replace(" ", "_")])
 	if context != null and id != "":
@@ -123,6 +128,17 @@ static func give(game: Node, pony: Node3D, dose: Dictionary, giver := "player", 
 		if giver == "player" and bonds != null: bonds.experience(id, "gift", "potion_%d" % Time.get_ticks_usec())
 	print("[chemistry] %s drank %.0fu (%s) from %s%s" % [id, units, _names(dose, ""), giver, " secretly" if secret else ""])
 	return {"ok": true, "text": "%s drinks the %s." % [who, _names(dose, "")]}
+
+
+## Where a giver's hand is: Anon's view (the camera), or a pony's chest. INF when unknown.
+static func hand_point(game: Node, giver: String) -> Vector3:
+	if giver == "player":
+		var camera: Node3D = game._find_camera(game.player) if game.has_method("_find_camera") and is_instance_valid(game.get("player")) else null
+		return camera.global_position + (-camera.global_basis.z * 0.45 + Vector3.DOWN * 0.25) if camera != null else Vector3.INF
+	var mares: Array = game.get("mares") if game.get("mares") is Array else []
+	for pony: Variant in mares:
+		if is_instance_valid(pony) and pony_id(pony) == giver: return (pony as Node3D).global_position + Vector3.UP * 0.7
+	return Vector3.INF
 
 
 ## The mixed colour of a dose, weighted by units.

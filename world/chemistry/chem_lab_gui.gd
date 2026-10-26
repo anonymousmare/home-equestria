@@ -15,6 +15,7 @@ const BLAST := preload("res://world/chemistry/chem_blast.gd")
 const BELONGINGS := preload("res://world/chemistry/pony_belongings.gd")
 const PLAYER := preload("res://world/chemistry/player_potion_effects.gd")
 const CONTAINER := preload("res://world/chemistry/chem_container.gd")
+const DRINK := preload("res://world/chemistry/chem_drink_visual.gd")
 const TOGGLE_KEY := KEY_L
 const AMOUNTS := [1, 5, 10, 30]
 ## Ponies this close to the player are offered in the "Give to" menu.
@@ -90,6 +91,9 @@ func _build() -> void:
 	var cheat := CheckButton.new(); cheat.text = "Every reagent"; cheat.focus_mode = Control.FOCUS_NONE
 	cheat.tooltip_text = "Dispense compounds, medicines and potions directly, not only the elements."
 	cheat.toggled.connect(func(on: bool): _cheat = on; _fill_dispenser()); header.add_child(cheat)
+	var legs := CheckButton.new(); legs.text = "Legs move"; legs.focus_mode = Control.FOCUS_NONE; legs.button_pressed = DRINK.legs_move
+	legs.tooltip_text = "A pony's foreleg reaches with the cup she drinks from. Turn off if a pony's leg looks wrong."
+	legs.toggled.connect(func(on: bool): DRINK.legs_move = on); header.add_child(legs)
 	header.add_child(_button("Close · L", close))
 
 	var columns := HBoxContainer.new(); columns.size_flags_vertical = Control.SIZE_EXPAND_FILL

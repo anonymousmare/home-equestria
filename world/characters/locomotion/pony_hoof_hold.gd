@@ -82,6 +82,28 @@ func kick(side:int,seconds:=.6)->bool:
 	_gesture_local=pony.global_transform.affine_inverse()*goal
 	return true
 
+## Holding a cup (world/chemistry/chem_drink_visual.gd): a forehoof reaches for `point` and keeps
+## following it (follow()) for `seconds`, as far as the joints allow. side 0 = left, 1 = right.
+func reach(side:int,seconds:float,point:Vector3)->bool:
+	if leg_index>=0 or pony._held or not pony.grounded() or not point.is_finite():return false
+	if pony.posture!=null and pony.posture.active():return false
+	var i:=-1
+	for k in pony.profile.legs.size():
+		if String(pony.profile.legs[k].name)==("FL" if side==0 else "FR"):i=k
+	if i<0:return false
+	var leg:Dictionary=pony.profile.legs[i]
+	var fk:=globals()
+	var hoof:Vector3=fk[leg.end].origin
+	if not begin({"leg":i,"bone":leg.leaf,"anchor":fk[leg.leaf].affine_inverse()*hoof},point):return false
+	gesture_left=seconds
+	_gesture_local=pony.global_transform.affine_inverse()*point
+	return true
+## Moves a reach() goal (a held cup) in her own frame, so turning her body carries it along.
+func follow(point:Vector3)->void:
+	if active() and gesture_left>0.0 and point.is_finite():_gesture_local=pony.global_transform.affine_inverse()*point
+## True while a scripted gesture such as reach() holds the hoof.
+func gesturing()->bool:return active() and gesture_left>0.0
+
 func _lift(side:int,seconds:float,toward:Vector3)->bool:
 	if leg_index>=0 or pony._held or not pony.grounded():return false
 	if pony.posture!=null and pony.posture.active():return false

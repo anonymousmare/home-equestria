@@ -253,8 +253,7 @@ func keep(pony: Node3D, dose: Dictionary, giver := "player", vessel := {}) -> Di
 	var warmth := CATALOG.temp_words(temp_now(held))
 	context.record("gift", "%s gave you a %s of %s (%s) to keep: %s. It is yours to use whenever you like." % [from, CONTAINER.noun(held.container), CATALOG.name_of(main).to_lower(), warmth, about(main)], [id], [id, giver])
 	# She takes it in her hoof for a moment.
-	var taken: Node3D = DRINK.hold(game, pony, held.container, EFFECTS._mix_color(dose), clampf(total_of(dose) / CONTAINER.capacity(held.container), 0.15, 1.0), temp_now(held))
-	if taken != null: taken.get_tree().create_timer(1.6).timeout.connect(taken.release)
+	DRINK.receive(game, pony, held.container, EFFECTS._mix_color(dose), clampf(total_of(dose) / CONTAINER.capacity(held.container), 0.15, 1.0), temp_now(held), EFFECTS.hand_point(game, giver))
 	if giver == "player" and bonds != null: bonds.experience(id, "gift", "kept_%d" % Time.get_ticks_usec())
 	if pony.has_signal("physical_reaction"): pony.emit_signal("physical_reaction", "kept:%s:%s" % [main, giver])
 	print("[chemistry] %s keeps %s from %s" % [id, label_of(dose), giver])
