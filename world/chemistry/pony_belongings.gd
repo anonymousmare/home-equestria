@@ -208,6 +208,8 @@ func situation_line(pony_id: String) -> String:
 static func about(reagent: String) -> String:
 	var entry := CATALOG.reagent(reagent)
 	var text := str(entry.get("description", "")).trim_suffix(".")
+	# Nopony has to find a flame: the item use itself lights it (a thermite pony once held off waiting for heat).
+	if BLAST.is_explosive(reagent): text += "; it needs no match, heat or tools here: [use_item] with it sets it off"
 	if entry.has("uses"): text += "; commonly used for " + str(entry.uses) + " (whether you know that depends on who you are)"
 	return text
 
