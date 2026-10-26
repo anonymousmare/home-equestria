@@ -3,6 +3,8 @@ extends Control
 signal marker_selected(marker: Dictionary)
 signal expand_requested
 signal zoom_lock_changed(locked: bool)
+## Ctrl+Shift+click: a developer teleport to this world X/Z (world/debug/dev_teleport.gd).
+signal teleport_requested(world_xz: Vector2)
 const LOCAL_PLACES := preload("res://world/ui/named_map_places.gd")
 const PLACE_FONT := preload("res://world/ui/fonts/CelestiaMediumRedux.ttf")
 var _local_refresh_at := 0
@@ -182,6 +184,10 @@ func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed: zoom_at(1.25, event.position)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed: zoom_at(0.8, event.position)
+		elif event.button_index == MOUSE_BUTTON_LEFT and event.pressed and event.ctrl_pressed and event.shift_pressed \
+				and teleport_requested.get_connections().size() > 0:
+			_dragging = false
+			teleport_requested.emit(map_to_world(event.position))
 		elif event.button_index == MOUSE_BUTTON_LEFT:
 			if compact and event.pressed: expand_requested.emit()
 			elif event.pressed: _dragging = true; _press = event.position; _drag_distance = 0

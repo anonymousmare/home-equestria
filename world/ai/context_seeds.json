@@ -530,6 +530,99 @@
       "priority": 30,
       "provenance": "Season 1-2",
       "text": "Spike is Twilight Sparkle's baby dragon assistant, a kid who lives with her at the Golden Oak Library. He sends her letters to Princess Celestia with green fire."
+    },
+    {
+      "id": "potions_general",
+      "scope": "authored",
+      "triggers": [
+        "potion",
+        "potions",
+        "brew",
+        "brewing",
+        "chemistry",
+        "chemistry set",
+        "chemicals",
+        "beaker",
+        "elixir"
+      ],
+      "viewers": [],
+      "priority": 38,
+      "provenance": "Anon's chemistry set (world/chemistry)",
+      "text": "Potions are real in Equestria: Zecora brews remedies and potions from Everfree plants, and unicorn magic can do similar things. Anon has a chemistry set and can brew a few whimsical potions: love, warmth, energy, focus, sleek and invisibility. They are mild, harmless and wear off within minutes. A potion's feeling is real while it lasts, but it never changes who a pony is or what she will agree to."
+    },
+    {
+      "id": "potion_love",
+      "scope": "canon",
+      "triggers": [
+        "love potion",
+        "love poison",
+        "love potions"
+      ],
+      "viewers": [],
+      "priority": 37,
+      "provenance": "Hearts and Hooves Day; Anon's chemistry set",
+      "text": "A love potion leaves the drinker warm, giddy and fond of whoever is near for a few minutes, then it fades. On Hearts and Hooves Day the Cutie Mark Crusaders slipped Cheerilee and Big McIntosh a love poison from an old book; it made them sappy until it wore off, and everypony agreed real feelings can't be brewed."
+    },
+    {
+      "id": "potion_warmth",
+      "scope": "authored",
+      "triggers": [
+        "warmth potion",
+        "warming potion"
+      ],
+      "viewers": [],
+      "priority": 36,
+      "provenance": "Anon's chemistry set (world/chemistry)",
+      "text": "A warmth potion spreads a cozy, fireside warmth through the drinker for several minutes; cold weather stops bothering her."
+    },
+    {
+      "id": "potion_energy",
+      "scope": "authored",
+      "triggers": [
+        "energy potion",
+        "energy drink"
+      ],
+      "viewers": [],
+      "priority": 36,
+      "provenance": "Anon's chemistry set (world/chemistry)",
+      "text": "An energy potion is fizzy and lemony; for a few minutes the drinker is bouncy, eager and talkative, then the buzz fades without a crash."
+    },
+    {
+      "id": "potion_focus",
+      "scope": "authored",
+      "triggers": [
+        "focus potion",
+        "focusing potion"
+      ],
+      "viewers": [],
+      "priority": 36,
+      "provenance": "Anon's chemistry set (world/chemistry)",
+      "text": "A focus potion gives a calm, clear head for several minutes: thoughts line up neatly and studying or careful work comes easily. Twilight Sparkle would find it fascinating."
+    },
+    {
+      "id": "potion_sleek",
+      "scope": "authored",
+      "triggers": [
+        "sleek potion",
+        "mane potion"
+      ],
+      "viewers": [],
+      "priority": 36,
+      "provenance": "Anon's chemistry set (world/chemistry)",
+      "text": "A sleek potion makes a coat and mane silky, glossy and shimmering for about ten minutes. Rarity would have opinions."
+    },
+    {
+      "id": "potion_invisibility",
+      "scope": "authored",
+      "triggers": [
+        "invisibility potion",
+        "invisible",
+        "invisibility"
+      ],
+      "viewers": [],
+      "priority": 36,
+      "provenance": "Anon's chemistry set (world/chemistry)",
+      "text": "An invisibility potion makes the drinker completely invisible for a couple of minutes: others can still hear and bump into her. It is clear, frosty and tingles."
     }
   ],
   "relationships": [

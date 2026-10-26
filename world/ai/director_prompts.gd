@@ -60,6 +60,8 @@ func situation_block(id: String) -> String:
 		lines.append("- " + _company_line(node.get_meta("social_group")))
 	if outcomes != "": lines.append("Your action outcomes (not dialogue):\n" + outcomes)
 	if node.has_meta("hayburger_order_context"): lines.append(str(node.get_meta("hayburger_order_context")))
+	# A potion Anon gave her that is still working (world/chemistry/pony_potion_effects.gd).
+	if node.has_meta("potion_context"): lines.append(str(node.get_meta("potion_context")))
 	if node.has_meta("relationship_runtime"):
 		lines.append(node.get_meta("relationship_runtime").prompt_for(id))
 	if entry.has("chat_since") and host._now() - float(entry.get("chat_last", -1e9)) < 120.0 and host._now() - float(entry.chat_since) > 150.0 \

@@ -141,6 +141,12 @@ func _spawn_player() -> void:
 		if not host.xr_active:
 			var chat := preload("res://world/ui/chat_box.gd").new()
 			chat.name = "ChatBox"; host.add_child(chat); chat.setup(host.director, host.player, host.inventory)
+	# L: the chemistry lab (world/chemistry/chem_lab_gui.gd); Ctrl+Shift+click: teleport (dev_teleport.gd).
+	if DEV.enabled() and not host.xr_active:
+		var lab: Node = load("res://world/chemistry/chem_lab_gui.gd").new()
+		lab.name = "ChemLab"; host.add_child(lab); lab.setup(host)
+		var teleport: Node = load("res://world/debug/dev_teleport.gd").new()
+		teleport.name = "DevTeleport"; host.add_child(teleport); teleport.setup(host)
 	if DEV.enabled():
 		var console: Node = load("res://world/debug/command_console.gd").new()
 		console.name = "CommandConsole"; host.add_child(console); console.setup(host)

@@ -11,6 +11,7 @@ const CONTACT_PAUSE := 1.2
 const CONTACT_BATCH_MAX := 6.0
 const CONTACT_COOLDOWN := 8.0
 const CONTACT_STALE := 20.0
+const CHEM := preload("res://world/chemistry/chem_catalog.gd")
 
 var host: Node
 var _remembered_contacts:Dictionary={}
@@ -22,6 +23,7 @@ func _init(owner_node: Node) -> void:
 
 func _remember_touch(kind:String,id:String)->void:
 	if kind.begins_with("anon_resting"):return # He lay down nearby; not a touch.
+	if kind.begins_with("potion"):return # pony_potion_effects.gd records the drink itself.
 	var key:=id+":"+kind
 	if host._now()-float(_remembered_contacts.get(key,-100.))<10.:return
 	_remembered_contacts[key]=host._now()
@@ -39,7 +41,7 @@ func _remember_outcome(event:Dictionary,id:String)->void:
 
 
 func reaction_chance(kind:String) -> float:
-	if kind in ["carried", "carried_away", "sprayed", "thrown"] or kind.begins_with("anon_resting"): return 1.0
+	if kind in ["carried", "carried_away", "sprayed", "thrown"] or kind.begins_with("anon_resting") or kind.begins_with("potion"): return 1.0
 	if kind.begins_with("petted"):return .3
 	match kind:
 		"flank_smack", "kiss_refused": return 1.0
@@ -78,7 +80,7 @@ func _on_physical_reaction(kind:String,id:String,deferred:bool=false,summary:=""
 	if not is_instance_valid(host.player_head) or not is_instance_valid(host.characters[id].node):return
 	if not host.awareness.can_hear(host.characters[id].node,host.player_head,host._earshot(id)):return
 	if host.state!="idle" or host.speech.state=="hearing":
-		if (kind in ["carried", "carried_away", "sprayed", "thrown"] or kind.begins_with("anon_resting")) and not deferred:
+		if (kind in ["carried", "carried_away", "sprayed", "thrown"] or kind.begins_with("anon_resting") or kind.begins_with("potion")) and not deferred:
 			host._pending_contacts[id] = {"kind": kind, "until": host._now() + 12.0}
 		return
 	if kind not in ["farewell","contact"] and host._reaction_rng.randf()>=reaction_chance(kind):return
@@ -98,6 +100,11 @@ func _on_physical_reaction(kind:String,id:String,deferred:bool=false,summary:=""
 	# Cuddling is her choice (dev 2026-09-28): the bed or couch only tells her he is lying there.
 	if kind.begins_with("anon_resting"): event = "Anon is lying down on the %s a few steps from you, resting. If you would like to cuddle with him, say so and use [cuddle]. It is just as fine to leave him be, or only say something." % kind.get_slice(":", 1)
 	if kind == "sprayed": event = "Anon just sprayed you with plain water from a small spray bottle. Your coat is damp where it hit. React briefly in character to the water."
+	# Potions from Anon's chemistry set (world/chemistry/pony_potion_effects.gd).
+	if kind.begins_with("potion:"):
+		var drink := kind.get_slice(":", 1)
+		event = "Anon just gave you a bottle of %s and you drank it. You now feel %s. React briefly in character to the taste and the feeling." % [CHEM.name_of(drink).to_lower(), str(CHEM.reagent(drink).get("felt", "nothing special"))]
+	if kind.begins_with("potion_refused:"): event = "Anon just offered you a bottle of %s to drink. That is not something anypony should drink, so you refused it. React briefly in character." % kind.get_slice(":", 1)
 	if kind=="quiet":event="The player has been quiet since your last reply. Sometimes just relish the moment with them: comfortable silence is a complete answer, so reply with only [silence], above all if you already asked a question. Speak only with a reason: a few natural words, then wait; never continue a monologue, restart your last topic or invent a project from the scenery. You may bring up something new instead. " + preload("res://world/ai/chatter_topics.gd").seed_line()
 	if kind=="farewell":event="The conversation has run its course: "+host._farewell_reason+" Decide for yourself what you do next. Usually you say a short, natural goodbye in your own words, like \"Okay, I gotta go, bye!\", optionally where you are off to, and go about your day (go_to, go_home or resume_routine). If it fits your character and the moment to stay near the player instead, say so and stay. Speak; do not reply with only [silence]."
 	var runtime: Node = host.get_tree().get_first_node_in_group("encounters")
