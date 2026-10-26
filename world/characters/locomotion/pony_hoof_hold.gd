@@ -15,6 +15,9 @@ var grab_count:=0
 ## A gesture that lets her keep walking (a cup in the hoof, chem_drink_visual.gd): navigation and
 ## walking commands are not paused while it lasts, and the gait leaves the held leg out.
 var walk_ok:=false
+## Her body's transform at the last prepare(): a walking reach carries the softened goal with her
+## (the spring is capped at 1.1 m/s, a trot is faster, and the hoof trailed back to her rump).
+var _body_before:=Transform3D.IDENTITY
 var residual:=0.0
 var _delta:=1.0/60.0
 ## Scripted gesture (no hand): the knee is led forward and up, the cannon folds back at the
@@ -100,6 +103,7 @@ func reach(side:int,seconds:float,point:Vector3,walking:=false)->bool:
 	if not begin({"leg":i,"bone":leg.leaf,"anchor":fk[leg.leaf].affine_inverse()*hoof},point):return false
 	gesture_left=seconds
 	walk_ok=walking
+	_body_before=pony.global_transform
 	_gesture_local=pony.global_transform.affine_inverse()*point
 	return true
 ## Moves a reach() goal (a held cup) in her own frame, so turning her body carries it along.
@@ -161,6 +165,10 @@ func prepare(delta:float)->void:
 		if _gesture_local.is_finite():target=pony.global_transform*_gesture_local
 	if pony._held or not pony.grounded() or target.distance_to(grip().origin)>1.5:
 		release();return
+	if walk_ok:
+		softened=pony.global_transform*(_body_before.affine_inverse()*softened)
+		spring_velocity=pony.global_transform.basis*(_body_before.basis.inverse()*spring_velocity)
+	_body_before=pony.global_transform
 	var steps:=maxi(1,ceili(minf(delta,.05)*120.0))
 	var dt:=minf(delta,.05)/steps
 	for step in steps:
