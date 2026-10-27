@@ -15,7 +15,7 @@ const MOD_PROMPTS := "user://mods/prompts"
 
 const DEFAULTS := {
 	"llm": {
-		"provider": "openai",           # "openai" (any OpenAI-compatible endpoint) or "anthropic"
+		"provider": "openai",           # "openai" (any OpenAI-compatible endpoint), "anthropic" or native "gemini"
 		"base_url": "",
 		"api_key": "",
 		"model": "",
@@ -42,6 +42,14 @@ const DEFAULTS := {
 		"vad_hangover": 0.75,           # seconds of silence that end an utterance
 		"vad_min_speech": 0.35,
 		"vad_max_speech": 18.0,
+	},
+	# Photos the player shows a pony (world/ai/photo_vision.gd): "off" sends no image; "same" sends
+	# it to the dialogue model above; "separate" asks this OpenAI-compatible vision model to describe it.
+	"vision": {
+		"mode": "off",
+		"base_url": "",
+		"api_key": "",
+		"model": "",
 	},
 	"tts": {
 		"provider": "none",             # "none"; "openai" = {base_url}/audio/speech; "gradio" = MOSS-TTS Gradio host at remote_url; "moss" = moss-tts at url; "remote" = Gradio via tools/ai/tts_proxy.py (legacy)
@@ -129,6 +137,12 @@ static func save_connection(connection:Dictionary,input_device:String,path:=USER
 	if not llm_error.is_empty(): return llm_error
 	var endpoint:=str(connection.get("base_url","")).strip_edges().rstrip("/")
 	var stt_in:Dictionary=sections.get("stt",{})
+	var vision_in:Dictionary=sections.get("vision",{})
+	if not vision_in.is_empty():
+		if str(vision_in.get("mode","off")) not in ["off","same","separate"]:return "Choose a photo vision setting."
+		var vision_url:=str(vision_in.get("base_url","")).strip_edges().rstrip("/")
+		if str(vision_in.mode)=="separate" and (not valid_url(vision_url) or str(vision_in.get("model","")).strip_edges().is_empty()):
+			return "Enter the vision model's HTTP or HTTPS base URL and model name, or turn photo vision off."
 	var tts_in:Dictionary=sections.get("tts",{})
 	for key in ["url","base_url"]:
 		if stt_in.has(key) and str(stt_in[key]).strip_edges()!="" and not valid_url(str(stt_in[key]).strip_edges().rstrip("/")):return "Enter an HTTP or HTTPS speech-to-text address."
@@ -167,6 +181,11 @@ static func save_connection(connection:Dictionary,input_device:String,path:=USER
 	if not preserve_input_device or not stt_in.is_empty(): data.stt=stt
 	if sections.has("chattiness"): data.chattiness=clampf(float(sections.chattiness),0.0,1.0)
 	if not usage.is_empty(): data.ai_usage=usage
+	if not vision_in.is_empty():
+		var vision:Dictionary=data.get("vision",{}).duplicate(true)
+		for key in ["mode","base_url","api_key","model"]:vision[key]=str(vision_in.get(key,"")).strip_edges()
+		vision.base_url=str(vision.base_url).rstrip("/")
+		data.vision=vision
 	if not tts_in.is_empty():
 		var tts:Dictionary=data.get("tts",{}).duplicate(true)
 		for key in tts_in:tts[key]=str(tts_in[key]).strip_edges().rstrip("/") if tts_in[key] is String and key.ends_with("url") else tts_in[key]
@@ -186,7 +205,7 @@ static func save_connection(connection:Dictionary,input_device:String,path:=USER
 static func validate_llm(connection: Dictionary) -> String:
 	var options_error := OPTIONS.validate(connection.get("generation_overrides", {}))
 	if not options_error.is_empty(): return options_error
-	if connection.get("provider") not in ["openai", "anthropic"]: return "Choose a provider protocol."
+	if connection.get("provider") not in ["openai", "anthropic", "gemini"]: return "Choose a provider protocol."
 	for key in ["base_url", "model", "api_key"]:
 		if not connection.get(key, "") is String: return "Dialogue fields must be text."
 	if not connection.get("openrouter_provider", "") is String or not connection.get("openrouter_fallbacks", true) is bool:
@@ -295,8 +314,9 @@ func get_value(path: String, fallback: Variant = null) -> Variant:
 			return fallback
 	return node
 
+## Android (Quest standalone) runs Whisper inside the game (native/whisper_stt, player board #13).
 static func supports_builtin_stt(platform: String) -> bool:
-	return platform in ["Windows", "Linux"]
+	return platform in ["Windows", "Linux"] or (platform == "Android" and ClassDB.class_exists("WhisperSTT"))
 
 static func builtin_unavailable(platform: String) -> String:
 	return "Built-in Whisper is unavailable on %s. Choose a reachable Whisper server or OpenAI-compatible Whisper API in Speech to text, or leave it Off. Audio is sent only to the service you configure." % platform

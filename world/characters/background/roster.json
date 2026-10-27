@@ -916,36 +916,6 @@
 		"fingerprint": "a5388b2769ee959720de0a0cf2fb9424cad8acfc01de6e7cc5ee315edd9c1270"
 	},
 	{
-		"id": "sunset_shimmer",
-		"display_name": "Sunset Shimmer",
-		"race": "unicorn",
-		"entry": "redacted",
-		"manes": [
-			"sunsetshimmer_Mane"
-		],
-		"tails": [
-			"sunsetshimmer_Tail"
-		],
-		"triangles": 7000,
-		"runner_ups": [
-			"redacted",
-			"redacted",
-			"src_revamped_sourcefile_factory_2_0_sfw/sunsetshimmer"
-		],
-		"guide": "https://mlpvector.club/cg/pony/v/313",
-		"palette_method": "show colour guide",
-		"mark_source": {
-			"facing": "right",
-			"svg": "/cg/cutiemark/196.svg",
-			"source": "http://fav.me/dcefv8e",
-			"contributor": "redacted"
-		},
-		"status": "built; rig PASS; dev visual review pending",
-		"voice_status": "character voice",
-		"fit_overrides": {},
-		"fingerprint": "9da29ead13310c37326261f90f6edb0dedbff50cd2375c212859ef446f921a7e"
-	},
-	{
 		"id": "moon_dancer",
 		"display_name": "Moon Dancer",
 		"race": "unicorn",
@@ -2285,31 +2255,6 @@
 		"fit_overrides": {
 			"tail_fit_scale": 0.82
 		}
-	},
-	{
-		"id": "juniper_montage",
-		"display_name": "Juniper Montage",
-		"race": "earth",
-		"entry": "redacted",
-		"tail_entry": null,
-		"manes": [
-			"octavia_Mane"
-		],
-		"tails": [
-			"octavia_Tail"
-		],
-		"triangles": 8190,
-		"runner_ups": [],
-		"guide": "wiki list of ponies colour cells",
-		"palette_method": "wiki HSL; hair recoloured from octavia_melody",
-		"mark_source": {
-			"booru_id": 2169113,
-			"method": "derpibooru cutie mark only"
-		},
-		"recolour_of": "octavia_melody",
-		"status": "built; rig PASS; dev visual review pending",
-		"voice_status": "temporary shared Cheerilee voice",
-		"fit_overrides": {}
 	},
 	{
 		"id": "lemony_gem",

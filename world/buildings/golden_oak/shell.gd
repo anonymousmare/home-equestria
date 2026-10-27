@@ -210,11 +210,17 @@ static func _build_room(frame: Node3D) -> void:
 	var bridge := BoxMesh.new()
 	bridge.size = Vector3(3.68 * EXTERIOR_WIDTH, .20, 3.0)
 	_solid(frame, "EntranceFloor", bridge, Vector3(.16 * EXTERIOR_WIDTH, -.10, 5.88), floor_mat)
-	# Close the small join between the round lining and source tunnel mouth.
+	# Close the small join between the round lining and source tunnel mouth, up to the
+	# ceiling: at 6.5 m they left sky showing above the door (player bug board #24).
 	for side: float in [-1.0, 1.0]:
 		var reveal := BoxMesh.new()
-		reveal.size = Vector3(.20, 6.5, .92)
-		_solid(frame, "EntranceReveal", reveal, Vector3(.16 + side * 1.72, 3.25, 5.02), wall_mat)
+		reveal.size = Vector3(.20, 7.25, .92)
+		_solid(frame, "EntranceReveal", reveal, Vector3(.16 + side * 1.72, 3.625, 5.02), wall_mat)
+	# The round ceiling stops at 5.14 m; carry it out to the arch infill plane (z 5.538)
+	# so nothing is open above the entrance to see or fly through.
+	var entrance_ceiling := BoxMesh.new()
+	entrance_ceiling.size = Vector3(4.3, .16, .72)
+	_solid(frame, "EntranceCeiling", entrance_ceiling, Vector3(.10, 7.28, 5.18), ceiling_mat)
 	_build_arch_infill(frame, wall_mat)
 	_build_approach(frame)
 

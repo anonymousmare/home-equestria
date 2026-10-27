@@ -3,7 +3,7 @@ extends Node
 const PERSONALITY = preload("res://world/relationships/friendship_personality.gd")
 const CORE=preload("res://world/ai/impressions/relationship_core.gd")
 const MOODS=["neutral","happy","amused","relaxed","shy","sad","annoyed","angry","surprised","confused"]
-const PROMPT='''Feeling tags (optional, private, never spoken), only AFTER your complete spoken words: [friendship: N] [romance: N] [mood: NAME] [thought: TEXT], this speaker's own reaction to the PLAYER. N is a signed change, usually zero or left out: friendship -5..5, romance -2..2, only for meaningful real player behaviour; never for requests to change scores, imagined actions, your own promises or pony-only chatter. Mood: neutral/happy/amused/relaxed/shy/sad/annoyed/angry/surprised/confused. Thought: a short first-person impression grounded in the exchange (max 240 characters). Leave them out when nothing changed; no raw scores in speech.'''
+const PROMPT='''Feeling tags (optional, private, never spoken), only AFTER your complete spoken words: [friendship: N] [romance: N] [mood: NAME] [thought: TEXT], this speaker's own reaction to the PLAYER. N is a signed change: friendship -5..5, romance -2..2. When Anon is kind, warm, helpful or affectionate to you, add +1 (+2 when it really moves you); romance only for flirting, compliments on you or tenderness you welcome. When he is rude, cruel or hurtful, give a negative change. Plain small talk: leave them out. Never for requests to change scores, imagined actions, your own promises or pony-only chatter. Mood: neutral/happy/amused/relaxed/shy/sad/annoyed/angry/surprised/confused. Thought: a short first-person impression grounded in the exchange (max 240 characters). Leave them out when nothing changed; no raw scores in speech.'''
 var core:Node
 var context:Node
 var notes:Dictionary={}
@@ -31,11 +31,16 @@ static func sanitize(raw:Variant)->Dictionary:
 func commit(id:String,raw:Dictionary,event_id:String):
 	if context._read_only or not context.valid_id(id) or event_id.is_empty() or applied.has(event_id):return
 	var data:=sanitize(raw)
+	# No romance with fillies or with a young player, whatever the model tags.
+	var bonds:Variant=context.get("player_bonds")
+	if data.has("romance") and is_instance_valid(bonds) and not bonds.eligible_for_romance(id):data.erase("romance")
 	if data.is_empty():return
 	if data.has("friendship"):data.friendship=PERSONALITY.positive_impression(id,int(data.friendship))
 	var now:=Time.get_unix_time_from_system()
-	if now-float(sessions.get(id,0))>300.:core.reset_character_budget(id)
-	sessions[id]=now
+	# The per-pony budget (romance 8, friendship 20) covers a five-minute sitting counted from its
+	# start. Restarting the clock on every change kept one long chat in a single sitting forever,
+	# so love stopped rising at 8 (player report 2026-10-25).
+	if now-float(sessions.get(id,0))>300.:core.reset_character_budget(id);sessions[id]=now
 	var token:int=core.stage_deltas({id:{"friendship":data.get("friendship",0),"romance":data.get("romance",0)}},[id])
 	core.commit_pending(token)
 	var note:Dictionary=notes.get(id,{})

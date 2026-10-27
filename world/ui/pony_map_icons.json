@@ -1393,35 +1393,6 @@
         50
       ]
     },
-    "juniper_montage": {
-      "name": "Juniper Montage",
-      "coat": [
-        0.99215686,
-        0.9882353,
-        0.76862746,
-        1.0
-      ],
-      "rect": [
-        384,
-        576,
-        96,
-        96
-      ],
-      "identity": "res://world/characters/background/juniper_montage.tres",
-      "source": "res://world/characters/background/marks/juniper_montage.png",
-      "blank": false,
-      "source_sha256": "1b0bd62c48bc0ea75ff542127d19d7b89066f23fc2c679e06cfaad6278022bad",
-      "upright_bounds": [
-        16,
-        16,
-        445,
-        528
-      ],
-      "icon_art_size": [
-        74,
-        88
-      ]
-    },
     "king_sombra": {
       "name": "King Sombra",
       "coat": [
@@ -3334,35 +3305,6 @@
       "icon_art_size": [
         88,
         71
-      ]
-    },
-    "sunset_shimmer": {
-      "name": "Sunset Shimmer",
-      "coat": [
-        1.0,
-        0.7921569,
-        0.32941177,
-        1.0
-      ],
-      "rect": [
-        96,
-        1440,
-        96,
-        96
-      ],
-      "identity": "res://world/characters/background/sunset_shimmer.tres",
-      "source": "res://world/characters/background/marks/sunset_shimmer.png",
-      "blank": false,
-      "source_sha256": "0a268e7334bff0e5dcfb653d9d76b5026aaf21312185c6b1e08f7363b757e92a",
-      "upright_bounds": [
-        16,
-        16,
-        517,
-        615
-      ],
-      "icon_art_size": [
-        74,
-        88
       ]
     },
     "sunshower": {

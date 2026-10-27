@@ -34,14 +34,60 @@ const CHARGE_FULL := 1.4
 var _charge_from := -1.0
 var _meter: Control
 ## Holding K while carrying lifts her face to his (dev 2026-10-14: K did nothing while she sat
-## at his chest, out of kissing reach). Closed loop on her lips; kept while the kiss lasts.
+## at his chest, out of kissing reach). Closed loop on her lips; kept while the kiss lasts. Held in
+## his heading's frame, so turning while kissing carries her round with him instead of leaving the
+## lift pointing where he used to face.
 var _kiss_lift := Vector3.ZERO
+## Bridal kiss reach (pony_carry.gd kiss_reach_goal): his view pitch when K went down; looking more
+## than REACH_LOOK_AWAY up or down from it lets her go until K is pressed again.
+var _reach_pitch := NAN
+var _reach_dropped := false
+const REACH_LOOK_AWAY := 35.0
+## A kiss that ends while K is still down lets her go too (else she rests at his lips, staring).
+var _reach_kissed := false
+## Bridal carried, she rides his stride: a small dip per footfall, trailing his own head bob
+## (desktop_player.gd _bob_phase) and deeper the faster he goes.
+const CRADLE_BOB := .012 # Metres at his walking speed.
+const CRADLE_BOB_MAX := 1.6 # Of that, at most (sprinting).
+const CRADLE_BOB_LAG := .45 # Radians her weight trails his step.
+const CRADLE_BOB_RATE := .5 # Dips per footfall: one every other step, a slower sway than his head's.
+var _cradle_bob := 0.0
+var _player_body: Node
 ## The carry-turn key (B by default) while carrying turns her round to face him; she rides a little further out so her face
 ## is not in his. Eased (0 = facing away, 1 = facing him); cleared when she leaves his arms.
-const FACING_EXTRA_REACH := 0.25
+const FACING_EXTRA_REACH := 0.12
 const FACING_TURN_SECONDS := 0.45
 var facing_player := false
 var _facing := 0.0
+## Bridal carry (pony_carry.gd cradle): hold G on a pony to lift her into it, or hold B while
+## carrying her (tap B still turns her). Hold B again for the ordinary carry; G sets her down,
+## after she is swung upright so she lands on her hooves. Lower and closer than the chest carry.
+## From his eyes, turned with his body only: right, up, forward.
+const CRADLE_OFFSET := Vector3(0.0, -0.45, -0.22)
+## Her heading in his arms: a quarter turn to his left (pony_carry.gd CRADLE_HEAD/BELLY aim her
+## from there, in his frame).
+const CRADLE_YAW := PI * 0.5
+const KEY_HOLD_SECONDS := 0.35
+var cradled := false
+var _pick_from := -1.0
+var _b_from := -1.0
+var _drop_upright := false
+## Laying her in bed (cradle_rest.gd bed_spot): G while she sleeps or dozes in his arms over a bed,
+## or looking at one, and he leans down and lays her on the mattress instead of setting her on her
+## hooves; she lands lying, asleep. He stands still meanwhile (desktop_player.gd lay_hold).
+const LAY_SECONDS := 1.5
+const LAY_LEAN := .3 # Metres his eyes come down.
+const LAY_PITCH := -.45 # His view tips down at least this far (radians).
+const LAY_ABOVE := .3 # Her barrel this far over her rest spot when he lets go.
+var _laying := -1.0
+var _lay: Dictionary = {}
+var _lay_start := Vector3.ZERO
+var _lay_pitch := 0.0
+## Kissing her from sleep (pony_carry.gd kiss_sleepy), he leans down to her.
+const SLEEPY_KISS_LEAN := .08
+const LEAN_RATE := .5 # Metres a second.
+var _lean := 0.0
+var _sleepy_kiss := false
 
 
 func _ready() -> void:
@@ -68,11 +114,24 @@ func _physics_step(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
 	_update_kiss_lift(delta)
 	_update_meter()
+	_update_keys()
 	_update_facing(delta)
+	if _laying >= 0.0: _update_laying(delta)
+	_update_lean(delta)
 	if is_instance_valid(held) and held.has_method("update_grab"):
-		held.update_grab(_hold.global_position + _kiss_lift, global_position)
+		held.update_grab(_hold.global_position + _heading() * _kiss_lift, global_position)
 		if held.has_method("set_hold_yaw"):
-			held.set_hold_yaw(global_basis.get_euler().y + PI * smoothstep(0.0, 1.0, _facing))
+			# Cradled, she lies across his arms with her head to his left.
+			var turn := lerpf(PI * smoothstep(0.0, 1.0, _facing), CRADLE_YAW, smoothstep(0.0, 1.0, cradle_amount()))
+			var yaw := global_basis.get_euler().y + turn
+			# Laid in bed, she turns to lie along it, head to the pillow.
+			if _laying >= 0.0:
+				var spot: Transform3D = _lay.spot
+				yaw = lerp_angle(yaw, spot.basis.get_euler().y, _lay_ease())
+			held.set_hold_yaw(yaw)
+	if _drop_upright and is_instance_valid(held) and cradle_amount() <= 0.1:
+		_drop_upright = false
+		_drop()
 
 
 ## G released: a short tap sets her down, a wind-up throws her (a menu may eat the key-up, so
@@ -106,9 +165,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
-	# Turn a carried pony round (Settings: "Turn carried pony", B by default).
+	# Turn a carried pony round (Settings: "Turn carried pony", B by default); held, it switches
+	# to and from the bridal carry (_update_keys tells the two apart).
 	if is_instance_valid(held) and InputMap.has_action("carry_turn") and event.is_action_pressed("carry_turn"):
-		facing_player = not facing_player
+		_b_from = Time.get_ticks_msec() / 1000.0
 		get_viewport().set_input_as_handled()
 		return
 	match (event as InputEventKey).physical_keycode:
@@ -125,7 +185,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif held != null:
 				if _drop(): get_viewport().set_input_as_handled()
 			elif not is_instance_valid(desktop_actions) or desktop_actions.can_accept_world_action():
-				if _try_pick_up(): get_viewport().set_input_as_handled()
+				if _try_pick_up():
+					_pick_from = Time.get_ticks_msec() / 1000.0
+					get_viewport().set_input_as_handled()
 		KEY_R:
 			_toggle_follow()
 
@@ -136,12 +198,30 @@ func _interact() -> bool:
 	if _ray.is_colliding() and _ray.get_collider() != null and _ray.get_collider().has_meta("painting_easel"):
 		var easel: Variant = _ray.get_collider().get_meta("painting_easel")
 		if is_instance_valid(easel): return bool((easel as Node).call("desktop_begin"))
+	# Carrying a pony (busy below), the door in view still opens: past her, world only.
+	if is_instance_valid(held) and _toggle_door_past_held(): return true
 	if is_instance_valid(desktop_actions) and desktop_actions.busy(): return false
 	if _try_seat(): return true
 	if _ray.is_colliding() and _ray.get_collider().has_method("toggle_door"):
 		_ray.get_collider().toggle_door()
 		return true
 	return _try_pet()
+
+func _toggle_door_past_held() -> bool:
+	var door := door_past_held()
+	if door == null: return false
+	door.toggle_door()
+	return true
+
+
+## The door in view past the pony in his arms (world only), or null.
+func door_past_held() -> Object:
+	_ray.collision_mask = 1
+	_ray.force_raycast_update()
+	var door: Object = _ray.get_collider() if _ray.is_colliding() else null
+	_ray.collision_mask = 3
+	_ray.force_raycast_update()
+	return door if door != null and door.has_method("toggle_door") else null
 
 ## E while seated stands up; E looking at a seat (within 1 m of where you look) sits down.
 func _try_seat() -> bool:
@@ -211,6 +291,8 @@ func _try_pick_up() -> bool:
 		pony.position = Vector3.ZERO
 		pony.rotation = Vector3.ZERO
 	held = pony
+	cradled = false
+	_drop_upright = false
 	# She keeps the way she faced him: facing him when lifted, she is held facing him (B turns her).
 	var ahead := -pony.global_basis.z
 	var to_him := global_position - pony.global_position
@@ -226,6 +308,14 @@ func _try_pick_up() -> bool:
 func _drop() -> bool:
 	if held == null:
 		return false
+	if _laying >= 0.0: return true
+	if is_instance_valid(held) and cradle_amount() > 0.9 and _begin_laying(): return true
+	if is_instance_valid(held) and (cradled or cradle_amount() > 0.1):
+		# Out of the cradle first; _physics_step sets her down once she is upright.
+		cradled = false
+		facing_player = true
+		_drop_upright = true
+		return true
 	if held.has_method("end_interaction"):
 		held.end_interaction()
 		held = null
@@ -287,14 +377,127 @@ func _update_kiss_lift(delta: float) -> void:
 		_kiss_lift = Vector3.ZERO
 		return
 	var affection: Node = held.get_node("Affection")
+	# Bridal carried, her body stays in his arms: she reaches up with her neck instead
+	# (pony_carry.gd kiss_reach_goal), her lips just in front of his so they touch.
+	if cradle_amount() > 0.0:
+		_kiss_lift = _kiss_lift.move_toward(Vector3.ZERO, delta * 1.5)
+		var k_down := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_physical_key_pressed(KEY_K)
+		var pitch := global_basis.get_euler().x
+		if not k_down:
+			_reach_pitch = NAN
+			_reach_dropped = false
+		elif is_nan(_reach_pitch):
+			_reach_pitch = pitch
+		elif absf(pitch - _reach_pitch) > deg_to_rad(REACH_LOOK_AWAY):
+			_reach_dropped = true
+		var kissing: bool = affection.get("kind") == "kiss"
+		if _reach_kissed and not kissing and k_down: _reach_dropped = true
+		_reach_kissed = kissing
+		var reaching: bool = not _reach_dropped and (affection.get("kind") == "kiss" or (k_down and _kiss_welcome()))
+		# His mouth by his heading alone: it doesn't swing with his eyes when he looks up or down.
+		var carry: Object = _cradle_carry()
+		carry.kiss_reach_goal = global_position + _heading() * Vector3(0.0, -0.07, -0.03) if reaching else Vector3.INF
+		carry.kiss_reach_eye = global_position
+		carry.kiss_reach_side = global_basis.x.normalized() * 0.032
+		carry.kiss_reach_away = _heading() * Vector3.FORWARD
+		return
 	if affection.get("kind") == "kiss": return
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and Input.is_physical_key_pressed(KEY_K):
 		var mouth := global_position + global_basis.orthonormalized() * Vector3(0.0, -0.07, -0.02)
 		var lips: Vector3 = affection.mouth_point()
 		if lips.is_finite():
-			_kiss_lift = (_kiss_lift + (mouth - lips) * minf(1.0, delta * 4.0)).limit_length(0.9)
+			_kiss_lift = (_kiss_lift + _heading().inverse() * (mouth - lips) * minf(1.0, delta * 4.0)).limit_length(0.9)
 		return
 	_kiss_lift = _kiss_lift.move_toward(Vector3.ZERO, delta * 1.5)
+
+
+func _begin_laying() -> bool:
+	var rest: Node = held.get_node_or_null("CradleRest")
+	var spot: Dictionary = rest.bed_spot(global_position, -global_basis.z) if rest != null else {}
+	if spot.is_empty(): return false
+	_lay = spot
+	_laying = 0.0
+	_lay_start = _hold.global_position
+	var body := _body()
+	_lay_pitch = float(body.get("_pitch")) if body != null and body.get("_pitch") != null else global_basis.get_euler().x
+	if body != null: body.set_meta("lay_hold", true)
+	return true
+
+
+func _lay_ease() -> float:
+	return smoothstep(0.0, 1.0, minf(_laying / LAY_SECONDS, 1.0))
+
+
+## Down to the mattress in his arms, his view following her; at the end she leaves them lying.
+func _update_laying(delta: float) -> void:
+	if not is_instance_valid(held):
+		_end_laying()
+		return
+	_laying += delta
+	var t := _lay_ease()
+	var spot: Transform3D = _lay.spot
+	_hold.global_position = _lay_start.lerp(spot.origin + Vector3.UP * LAY_ABOVE, t)
+	var body := _body()
+	var camera: Node3D = body.get("camera") if body != null else null
+	if body != null and body.get("_pitch") != null and camera != null:
+		var pitch := lerpf(_lay_pitch, minf(_lay_pitch, LAY_PITCH), t)
+		body.set("_pitch", pitch)
+		camera.rotation.x = pitch
+	if _laying < LAY_SECONDS: return
+	var pony := held
+	var rest: Node = pony.get_node_or_null("CradleRest")
+	var spot_data := _lay
+	_end_laying()
+	pony.end_interaction()
+	held = null
+	cradled = false
+	if is_instance_valid(desktop_actions): desktop_actions.pony_released()
+	if rest != null: rest.lay_down(spot_data)
+	print("[interact] laid %s in bed" % pony.name)
+
+
+func _end_laying() -> void:
+	_laying = -1.0
+	_lay = {}
+	var body := _body()
+	if body != null and body.has_meta("lay_hold"): body.remove_meta("lay_hold")
+
+
+## His eyes come down while he lays her in bed or kisses her from sleep (desktop_player.gd lean_down).
+func _update_lean(delta: float) -> void:
+	var carry: Variant = _cradle_carry()
+	var reaching: bool = carry != null and carry.kiss_reach_goal.is_finite()
+	_sleepy_kiss = reaching and (_sleepy_kiss or carry.kiss_sleepy == true)
+	var want := LAY_LEAN * _lay_ease() if _laying >= 0.0 else (SLEEPY_KISS_LEAN if _sleepy_kiss else 0.0)
+	_lean = move_toward(_lean, want, delta * LEAN_RATE)
+	var body := _body()
+	if body == null: return
+	if _lean > 0.0: body.set_meta("lean_down", _lean)
+	elif body.has_meta("lean_down"): body.remove_meta("lean_down")
+
+
+## His body (desktop_player.gd), found once.
+func _body() -> CharacterBody3D:
+	if not is_instance_valid(_player_body):
+		_player_body = get_parent()
+		while _player_body != null and not _player_body is CharacterBody3D: _player_body = _player_body.get_parent()
+	return _player_body as CharacterBody3D
+
+
+## She reaches up to his lips only where a kiss may happen at all (pony_kisser.gd try_kiss): a grown
+## pony, awake, who welcomes his kisses, and he is not a foal. A filly, a sleeper or a pony who does
+## not want it stays lying in his arms.
+func _kiss_welcome() -> bool:
+	var identity: Variant = held.get("identity")
+	if identity == null or identity.filly or held.get("sleeping") == true: return false
+	if PLAYER_FORM.is_young(PLAYER_FORM.active(get_tree())): return false
+	var runtime: Node = held.get_meta("relationship_runtime") if held.has_meta("relationship_runtime") else null
+	return runtime != null and runtime.get("bonds") != null and runtime.bonds.welcomes(str(held.get_meta("relationship_id", "")), "kiss")
+
+
+## His heading alone (no pitch): the frame the kiss lift lives in.
+func _heading() -> Basis:
+	return Basis(Vector3.UP, global_basis.get_euler().y)
 
 
 ## Eases her round toward (or away from) him and moves the hold point out to match.
@@ -302,9 +505,73 @@ func _update_facing(delta: float) -> void:
 	if not is_instance_valid(held):
 		facing_player = false
 		_facing = 0.0
+		cradled = false
+		_drop_upright = false
+		if _laying >= 0.0: _end_laying()
 	else:
 		_facing = move_toward(_facing, 1.0 if facing_player else 0.0, delta / FACING_TURN_SECONDS)
+	var carry: Variant = _cradle_carry()
+	if carry != null: carry.cradle_goal = cradled
 	_hold.position = HOLD_OFFSET + Vector3(0.0, 0.0, -FACING_EXTRA_REACH * smoothstep(0.0, 1.0, _facing))
+	# Cradled, she rests in his arms, not in his gaze: only his turning moves her, never his
+	# looking up or down (that is his neck).
+	var cradled_amount := smoothstep(0.0, 1.0, cradle_amount())
+	if cradled_amount > 0.0:
+		var arms := global_position + Basis(Vector3.UP, global_basis.get_euler().y) * CRADLE_OFFSET
+		arms.y += _stride_bob(delta)
+		_hold.global_position = _hold.global_position.lerp(arms, cradled_amount)
+	else:
+		_cradle_bob = 0.0
+
+
+## Her dip this tick from his stride (0 standing still, flying or swimming).
+func _stride_bob(delta: float) -> float:
+	var want := 0.0
+	var body := _body()
+	if body != null and body.get("_bob_phase") != null and body.is_on_floor():
+		var speed := Vector2(body.velocity.x, body.velocity.z).length()
+		var walk := float(body.get("walk_speed")) if body.get("walk_speed") != null else 4.0
+		if speed > .1:
+			want = -absf(sin(float(body.get("_bob_phase")) * CRADLE_BOB_RATE - CRADLE_BOB_LAG)) * CRADLE_BOB * minf(speed / walk, CRADLE_BOB_MAX)
+	_cradle_bob = lerpf(_cradle_bob, want, minf(1.0, 12.0 * delta))
+	return _cradle_bob
+
+
+## The held pony's carry state when she can be cradled (Spike and older actors cannot).
+func _cradle_carry() -> Variant:
+	if not is_instance_valid(held): return null
+	var carry: Variant = held.get("carry")
+	return carry if carry is RefCounted and "cradle_goal" in carry else null
+
+
+## How far into the bridal carry she is, 0..1 (eased on her side by pony_carry.gd).
+func cradle_amount() -> float:
+	var carry: Variant = _cradle_carry()
+	return float(carry.cradle) if carry != null else 0.0
+
+
+## Hold G on a pony to lift her straight into the bridal carry; the carry-turn key (B) tapped
+## turns her, held switches between the bridal and the ordinary carry.
+func _update_keys() -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if _pick_from >= 0.0:
+		if not is_instance_valid(held) or not Input.is_physical_key_pressed(KEY_G): _pick_from = -1.0
+		elif now - _pick_from >= KEY_HOLD_SECONDS:
+			_pick_from = -1.0
+			if _cradle_carry() != null: cradled = true
+	if _b_from < 0.0: return
+	if not is_instance_valid(held) or _drop_upright:
+		_b_from = -1.0
+	elif not (InputMap.has_action("carry_turn") and Input.is_action_pressed("carry_turn")):
+		if not cradled: facing_player = not facing_player
+		_b_from = -1.0
+	elif now - _b_from >= KEY_HOLD_SECONDS:
+		_b_from = -1.0
+		if cradled:
+			cradled = false
+			facing_player = true
+		elif _cradle_carry() != null:
+			cradled = true
 
 
 ## The throw meter by the crosshair while G winds up.

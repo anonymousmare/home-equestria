@@ -109,6 +109,30 @@ func _overhead_allowed(viewer: Node3D) -> bool:
 		"caption": return false
 	return not (viewer is XRCamera3D)
 
+## Bridal-carried (player/interactor.gd), her words sit too close and askew to read overhead.
+static func _cradled(actor: Node3D) -> bool:
+	var carry: Variant = actor.get("carry")
+	return carry is RefCounted and carry.get("cradle_goal") == true
+
+## Bridal carried, her caption is all of her words: above the hotbar, wider, and as tall as its
+## wrapped lines, growing upward. A Label only draws the lines that fit its height, so a long reply
+## lost its newest lines (the carry controls sit in the corner instead, player/cradle_controls.gd).
+const CRADLED_CAPTION_BOTTOM := -110.0
+const CRADLED_CAPTION_HALF_WIDTH := 450.0
+func _lift_caption(lift: bool) -> void:
+	if not is_instance_valid(fallback_label): return
+	if not lift:
+		if fallback_label.offset_bottom == -20.0: return
+		fallback_label.offset_left = -300.0; fallback_label.offset_right = 300.0
+		fallback_label.offset_top = -140.0; fallback_label.offset_bottom = -20.0
+		fallback_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		return
+	var lines := maxi(1, fallback_label.get_line_count())
+	var height := maxf(120.0, lines * fallback_label.get_line_height() + 8.0)
+	fallback_label.offset_left = -CRADLED_CAPTION_HALF_WIDTH; fallback_label.offset_right = CRADLED_CAPTION_HALF_WIDTH
+	fallback_label.offset_bottom = CRADLED_CAPTION_BOTTOM; fallback_label.offset_top = CRADLED_CAPTION_BOTTOM - height
+	fallback_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+
 func _speaker_in_view(viewer: Node3D, anchor: Vector3) -> bool:
 	if not is_instance_valid(viewer) or not viewer.is_inside_tree(): return false
 	var toward := anchor - viewer.global_position
@@ -310,7 +334,8 @@ func _update_pose() -> void:
 		growth = clampf(viewer.global_position.distance_to(anchor) / NEAR_DISTANCE, 1.0, MAX_GROWTH)
 	global_transform = Transform3D(facing.scaled(Vector3.ONE * growth), anchor)
 	_ensure_fallback(viewer)
-	looking_at_speaker = _overhead_allowed(viewer) and actor.is_visible_in_tree() and _speaker_in_view(viewer, anchor)
+	looking_at_speaker = _overhead_allowed(viewer) and not _cradled(actor) and actor.is_visible_in_tree() and _speaker_in_view(viewer, anchor)
+	_lift_caption(_cradled(actor))
 	var enabled := subtitle_enabled and not text.is_empty()
 	visible = enabled and _layout_ready and looking_at_speaker
 	_update_fallback(enabled and not looking_at_speaker)

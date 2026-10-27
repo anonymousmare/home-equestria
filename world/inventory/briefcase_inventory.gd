@@ -18,6 +18,7 @@ const SHOP_ITEMS := preload("res://world/shop/shop_items.gd")
 const SHOP_PURCHASE := preload("res://world/shop/shop_purchase.gd")
 ## Loaded only when a folding easel is used (world/painting/).
 const EASEL_FOLD := "res://world/painting/easel_fold.gd"
+const PHOTO_CAMERA := preload("res://world/items/photo_camera.gd")
 ## AnonPony (docs/ANONPONY_DESIGN_2026_10_01.md section 9): things sit at her muzzle, a unicorn
 ## floats them in her magic, and she wears no clothes.
 const PLAYER_FORM := preload("res://world/life/player_form.gd")
@@ -99,6 +100,8 @@ var _closed_pose := Transform3D.IDENTITY
 var clothing: RefCounted
 var customizer: Node3D
 var wrist: Node3D
+## Day and time above the wrist buttons (player bug board #18: an in-game clock).
+var _watch: Label3D
 var _wardrobe_lock_owned := false
 var _mirror_drag := false
 var _next_hover := -1
@@ -275,6 +278,9 @@ func _build_wrist():
 		mesh.mesh=box;mesh.material_override=mat;mesh.position.x=(i-.5)*WRIST_BUTTON_SPACING;wrist.add_child(mesh)
 		var icon:=Sprite3D.new();icon.texture=load("res://world/inventory/icons/briefcase.svg" if i==0 else ("res://world/customization/patterns/shirt_icon.svg" if i==1 else "res://world/ui/profile/icons/scan-eye.svg"))
 		icon.pixel_size=.00045 if i==2 else .00039;icon.position=Vector3(mesh.position.x,0,.005);icon.double_sided=false;icon.shaded=false;wrist.add_child(icon)
+	_watch = Label3D.new(); _watch.pixel_size = 0.00022; _watch.font_size = 64; _watch.outline_size = 12
+	_watch.position = Vector3(WRIST_BUTTON_SPACING * .5, 0.054, 0.005); _watch.double_sided = false; _watch.shaded = false
+	wrist.add_child(_watch); _tell_time()
 	var carrier := FOREARM_PANEL.new(); wrist.add_child(carrier)
 	if _desktop:
 		# Desktop has no arm to look at: Tab floats these buttons in front of the view, so each
@@ -284,10 +290,16 @@ func _build_wrist():
 			caption.pixel_size = 0.00022; caption.font_size = 48; caption.outline_size = 10
 			caption.position = Vector3((i - .5) * WRIST_BUTTON_SPACING, -0.05, 0.005); caption.double_sided = false
 			wrist.add_child(caption)
-		carrier.fit(Rect2(-0.086, -0.064, 0.259, 0.104), -0.0035)
+		carrier.fit(Rect2(-0.086, -0.064, 0.259, 0.134), -0.0035)
 	else:
-		carrier.fit(Rect2(-0.086, -0.040, 0.259, 0.080), -0.0035)
+		carrier.fit(Rect2(-0.086, -0.040, 0.259, 0.110), -0.0035)
 	wrist.hide()
+
+func _tell_time() -> void:
+	# Looked up, not named: fixtures load this script without the autoloads.
+	var clock: Node = get_node_or_null("/root/TimeOfDay")
+	if _watch != null and clock != null: _watch.text = "Day %d   %s" % [int(clock.day) + 1, clock.time_string()]
+
 func _wrist_input(side: String, sample: Dictionary) -> bool:
 	return _wrist_part._wrist_input(side, sample)
 
@@ -424,6 +436,7 @@ func _process(_delta: float) -> void:
 	if started > 0: CPU_PROFILE.record("inventory", started)
 
 func _process_step(_delta: float) -> void:
+	if wrist != null and wrist.visible: _tell_time()
 	if _desktop or case==null:return
 	_place_hotbar()
 	for side:String in held.keys():
@@ -795,6 +808,12 @@ func _input(event: InputEvent):
 		if use_click and held.desktop.get_meta("item_id", "") == "goods:easel":
 			if event.pressed: load(EASEL_FOLD).unfold(self, "desktop")
 			get_viewport().set_input_as_handled(); return
+		# The photo camera: hold right click to look through it, click to take the photo.
+		if use_click and held.desktop.get_meta("item_id", "") == "goods:camera":
+			var photo_camera: Node3D = PHOTO_CAMERA.on(held.desktop)
+			if event.button_index == MOUSE_BUTTON_RIGHT: photo_camera.set_looking(event.pressed, camera)
+			elif event.pressed: photo_camera.snap(self, camera)
+			get_viewport().set_input_as_handled(); return
 		if held.desktop.get_meta("item_id", "") == "spray-bottle" and use_click:
 			if event.pressed: held.desktop.get_node("SprayBottle").spray()
 			get_viewport().set_input_as_handled(); return
@@ -995,6 +1014,8 @@ func interaction_hint() -> Dictionary:
 			var pony: Node3D = aimed.get("pony")
 			var text := "Safety on · won't fire at a foal" if pony != null and taser.foal(pony) else ("Click · Fire taser" if side == "desktop" else "Trigger · Fire taser")
 			return {"target": item, "text": text, "point": item.global_position + Vector3.UP * .15}
+		if is_instance_valid(item) and item.get_meta("item_id", "") == "goods:camera":
+			return {"target": item, "text": "Click · Take photo   Hold right click · Look through" if side == "desktop" else "Eyepiece to your eye · Look through   Trigger · Take photo", "point": item.global_position + Vector3.UP * .12}
 		if is_instance_valid(item) and item.get_meta("item_id", "") == "goods:easel":
 			return {"target": item, "text": "Click · Unfold easel on flat ground" if side == "desktop" else "Trigger · Unfold easel on flat ground", "point": item.global_position + Vector3.UP * .15}
 	return {}

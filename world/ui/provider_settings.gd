@@ -28,6 +28,7 @@ const PROFILES := preload("res://world/ai/llm_profiles.gd")
 const PRESETS:=[
 	{"name":"Anthropic","provider":"anthropic","base_url":"https://api.anthropic.com/v1","model":"e.g. claude-sonnet-4-5"},
 	{"name":"OpenAI","provider":"openai","base_url":"https://api.openai.com/v1","model":"e.g. gpt-4o-mini"},
+	{"name":"Google Gemini","provider":"gemini","base_url":"https://generativelanguage.googleapis.com","model":"e.g. gemini-2.5-flash"},
 	{"name":"OpenRouter","provider":"openai","base_url":"https://openrouter.ai/api/v1","model":"e.g. anthropic/claude-sonnet-4.5"},
 	{"name":"Ollama (local)","provider":"openai","base_url":"http://127.0.0.1:11434/v1","model":"e.g. llama3.1:8b (ollama pull it first)"},
 	{"name":"llama.cpp server (local)","provider":"openai","base_url":"http://127.0.0.1:8080/v1","model":"any name; the server uses its loaded model"},
@@ -42,6 +43,9 @@ const USAGE_MODES:=[["full","Full: ponies also chat among themselves and come to
 const CACHE_MODES:=[["auto","Automatic (Claude through OpenRouter)"],["on","On (cache hints on every request)"],["off","Off"]]
 const CHATTINESS_NAMES:={1.0:"Normal",0.75:"A bit quieter",0.5:"Quiet",0.25:"Very quiet",0.1:"Almost silent"}
 var ai_usage:="full"
+## Photos a pony can see (world/ai/photo_vision.gd); off by default.
+const VISION_MODES:=[["off","Off: photos never leave the game"],["same","My dialogue model sees them (it must accept images)"],["separate","A separate vision model describes them"]]
+var vision_mode:="off"
 var cache_hints:="auto"
 const TEXT:=Color("edd6a2")
 const WARN:=Color("ff9f6b")
@@ -114,7 +118,7 @@ func setup(surface:Node, in_tab := false)->void:
 	label("Choose your provider, paste your key, then fetch or enter a model.",20)
 	preset_button=button("");preset_button.pressed.connect(cycle_preset)
 	protocol=button("");protocol.pressed.connect(func():
-		provider="anthropic" if provider=="openai" else "openai";_connection_changed();refresh())
+		provider={"openai":"anthropic","anthropic":"gemini"}.get(provider,"openai");_connection_changed();refresh())
 	field("base_url","Provider base URL","https://your-provider.example/v1")
 	field("api_key","API key","Leave empty for local servers",true)
 	field("model","Model","Model ID from your provider")
@@ -201,6 +205,12 @@ func setup(surface:Node, in_tab := false)->void:
 	_stt_model_status=label("",20)
 	_buttons.stt_mode=button("");_buttons.stt_mode.pressed.connect(func():stt_mode=_next(STT_MODES,stt_mode);refresh())
 	microphone=button("");microphone.pressed.connect(cycle_microphone)
+	label("Photos",27)
+	label("Hold a photo from the camera while you talk to a pony and she sees it. An image costs far more than a line of speech; only the turn that shows a photo sends it.",19)
+	_buttons.vision=button("");_buttons.vision.pressed.connect(func():vision_mode=_next(VISION_MODES,vision_mode);refresh())
+	field("vision_base_url","Vision model base URL (OpenAI-compatible)","https://openrouter.ai/api/v1")
+	field("vision_api_key","Vision API key","",true)
+	field("vision_model","Vision model","A model that accepts images")
 	status=label("",21)
 	_save = button("Save settings"); _save.pressed.connect(save_connection)
 	_back = button("Back"); _back.pressed.connect(func():closed.emit()); _back.visible = not embedded
@@ -259,6 +269,10 @@ func open()->void:
 	# The developer's Python proxy path stays selectable only where it is already in use.
 	if tts_provider=="remote":_tts_choices.append(["remote","Gradio host via local proxy (tools/ai)"])
 	for key in ["base_url","api_key","model","voice","remote_url","url"]:fields["tts_"+key].text=str(tts.get(key,""))
+	var vision:Dictionary=config.section("vision")
+	vision_mode=str(vision.get("mode","off"))
+	if vision_mode not in ["off","same","separate"]:vision_mode="off"
+	for key in ["base_url","api_key","model"]:fields["vision_"+key].text=str(vision.get(key,""))
 	_warning.text="\n".join(config.warnings)
 	_warning.visible=not config.warnings.is_empty()
 	test_status.text=""
@@ -276,7 +290,7 @@ func open()->void:
 	show();refresh();_scroll.scroll_vertical=0;preset_button.grab_focus()
 
 func refresh()->void:
-	protocol.text="Protocol: "+("Anthropic Messages" if provider=="anthropic" else "OpenAI-compatible")
+	protocol.text="Protocol: "+{"anthropic":"Anthropic Messages","gemini":"Google Gemini (native)"}.get(provider,"OpenAI-compatible")
 	preset_button.text="Provider template: "+PRESETS[_preset].name+"  (press to change)"
 	_refresh_profiles()
 	microphone.text="Microphone: "+("System default" if input_device.is_empty() else input_device)
@@ -298,6 +312,8 @@ func refresh()->void:
 	for key in ["tts_base_url","tts_api_key","tts_model","tts_voice"]:_rows[key].visible=tts_provider=="openai"
 	_rows.tts_remote_url.visible=tts_provider in ["gradio","remote"]
 	_rows.tts_url.visible=tts_provider=="moss"
+	_buttons.vision.text="Photos: "+_caption(VISION_MODES,vision_mode)
+	for key in ["vision_base_url","vision_api_key","vision_model"]:_rows[key].visible=vision_mode=="separate"
 	var openrouter:=provider=="openai" and CONFIG.is_openrouter(fields.base_url.text)
 	_buttons.route_fetch.visible=openrouter
 	_route_picker.visible=openrouter
@@ -505,8 +521,13 @@ func _tts_section()->Dictionary:
 	for key in ["base_url","api_key","model","voice","remote_url","url"]:section[key]=fields["tts_"+key].text.strip_edges()
 	return section
 
+func _vision_section()->Dictionary:
+	var section:={"mode":vision_mode}
+	for key in ["base_url","api_key","model"]:section[key]=fields["vision_"+key].text.strip_edges()
+	return section
+
 func save_connection()->void:
-	var error:=CONFIG.save_connection(_llm_connection(),input_device,config_path,{"stt":_stt_section(),"tts":_tts_section(),"chattiness":chattiness,"ai_usage":ai_usage})
+	var error:=CONFIG.save_connection(_llm_connection(),input_device,config_path,{"stt":_stt_section(),"tts":_tts_section(),"chattiness":chattiness,"ai_usage":ai_usage,"vision":_vision_section()})
 	status.add_theme_color_override("font_color",WARN if not error.is_empty() and not error.begins_with("!") else TEXT)
 	if not error.is_empty() and not error.begins_with("!"):
 		status.text=error;panel.refresh();return

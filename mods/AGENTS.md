@@ -1,0 +1,78 @@
+# Prompt for AI agents building a Home: Equestria mod
+
+You are building a mod for Home: Equestria, a Godot 4.5 GDScript VR and desktop pony life-sim.
+The result is one standalone `.pck` file that players drop into their mods folder. Read
+`res://mods/README.md` first: it defines the mod format, the `Mods` hooks and the build command.
+This file adds the working rules.
+
+## Your task, in order
+
+1. Ask the user what the mod should do if that is unclear. Pick a mod id: lower-case letters,
+   digits and `_`, unique (for example `rarity_hats`).
+2. Find the game code that owns the behaviour. Search the source: `world/` holds gameplay,
+   `player/` input and the player's body, `autoload/` shared state such as `Settings`. Read the
+   owning script fully before changing anything. `docs/` (when present) has a codebase guide.
+3. Choose the sturdiest way that works, in this order: entry script with `Mods` hooks; JSON
+   merge into game data; a script extension that calls `super`; replacing a game file. Say which
+   you chose and why.
+4. Write everything under `res://mods/<id>/`: `mod.json`, scripts, scenes, assets. Do not edit
+   any game file outside that folder. Game files you replace on purpose are copied into the
+   mod's pack at the game's path, never edited in place.
+5. Make sure the project has its source data: the `source-data` zips from the GitHub release of
+   the same game version, unzipped into the project root. If pony bodies, terrain or grass are
+   missing, ask the user to download and unzip them; do not work around missing assets.
+   Then import and build:
+   ```
+   godot --headless --xr-mode off --path <project> --editor --quit
+   godot --headless --xr-mode off --path <project> --script res://tools/modding/build_mod.gd -- <id>
+   ```
+   Build success prints `MOD_BUILT <path>`. Any `MOD_BUILD_FAILED` line says what is wrong.
+6. Test. Run the game with the mod unpacked (`godot --xr-mode off --path <project> -- --mod-src <id>`)
+   or with the built pack in the mods folder. Read the log: `[mods] <id> <version>` means it
+   loaded. `[mods] <id> not loaded: ...` says why it did not. Fix every script error the log shows.
+   Then check the behaviour in game, start a fresh world and load an existing one, and confirm the
+   game still runs with the mod switched off in Settings → Mods.
+7. Tell the user where the `.pck` is, what it changes, how you tested it, and anything you could
+   not test (for example VR or Quest).
+
+## GDScript and Godot rules
+
+- Godot 4.5 GDScript, tabs for indentation, snake_case names, UPPER_SNAKE_CASE constants.
+- No `class_name` in mod scripts: global classes do not register from a pack. Use
+  `preload("res://mods/<id>/file.gd")`.
+- Type values read from a Variant explicitly: `var count: int = data.get("count", 0)`.
+  `var count := data.get("count", 0)` is a parse error.
+- Check optional nodes and properties before use: `node.get("prop")`, `has_method()`,
+  `is_instance_valid()`. Game internals change between versions; fail quietly, never crash.
+- An entry script is a `Node`. Use `_ready`, signals and `Mods.on_node`. Avoid heavy work in
+  `_process`: ponies, grass and the world are already expensive, and players run VR at 72-90 FPS.
+- A coroutine that waits in a loop must stop when the world closes: check
+  `is_instance_valid(...)` and `is_inside_tree()` after every `await`.
+- Save data goes in `Mods.state("<id>")`, then `Mods.save_changed()`. Never add keys to the
+  game's own save sections.
+- A script extension must call `super(...)` in every function it overrides, unless replacing
+  the behaviour is the point of the mod.
+- Physics bodies take the scale of their parent when they enter the tree: set a body's
+  transform before `add_child`.
+
+## Game rules mods should keep
+
+- Interactions are physical: books open with text on pages, items are objects in the world held
+  in hands. Menus are only for settings and saves. Prefer an object the player handles over a
+  GUI panel.
+- The game runs on desktop and in VR (PC and Quest). Anything a player must do needs a desktop
+  key or mouse action and a VR hand action, or should say it is desktop only.
+- Pony poses must stay inside the game's joint limits: rotate bones, never stretch them.
+- Young ponies (fillies and colts) have no romance of any kind.
+- The AI ponies speak through prompt text with action tags such as `[follow: player]`. To add a
+  pony behaviour the AI can choose, study `world/ai/pony_action_schema.gd` and the director
+  scripts in `world/ai/` before extending them.
+
+## Do not
+
+- Do not make network requests, read or write files outside `user://` and `res://`, run
+  programs, or collect anything about the player. Players trust mods with their computer.
+- Do not copy assets you have no right to share. Credit your sources in `mod.json` "description"
+  or in the files you ship.
+- Do not edit `res://tools/modding/build_mod.gd` or `res://world/modding/` to make your mod work;
+  the players' game will not have your edits.

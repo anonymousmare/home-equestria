@@ -2283,12 +2283,13 @@ static func predict_turn_transform(current: Transform3D, speed: float,
 func _update_body(delta: float) -> void:
 	if _held:
 		_body_height = move_toward(_body_height, 0.0, delta * 0.3)
-		var rotation := Basis.from_euler(Vector3(carry.pitch, carry.grip_angles.x, carry.grip_angles.y)).get_rotation_quaternion()
+		var rotation := carry.body_rotation()
 		_body_tilt = _body_tilt.slerp(rotation, 1.0 - exp(-delta / 0.08))
 		var center := carry.pivot_center
 		var carried := Transform3D(Basis(_body_tilt), center - _body_tilt * center + _body_offset + Vector3.UP * _body_height)
 		pivot.transform = carry.start_pivot.interpolate_with(carried, carry.blend)
 		_apply_body_scale()
+		if carry.cradle > 0.0: pivot.transform.basis = pivot.transform.basis.scaled_local(Vector3.ONE * carry.cradle_scale())
 		return
 	if not is_on_floor():
 		_body_height = move_toward(_body_height, 0.0, delta * 0.3)

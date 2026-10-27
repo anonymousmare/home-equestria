@@ -6,17 +6,20 @@ extends RefCounted
 ## bridge, 5 m off each end on dry bank, in walking order.
 ##
 ## Water: the town canal grid (world/water/ponyville_canals.json, 1 m cells, NaN = dry), the
-## same data the water surface is built from. Bridges: the fitted deck ends of the three placed
+## same data the water surface is built from. Bridges: the fitted deck ends of the four placed
 ## bridges in world/props/ponyville/rnl_scenery.json (tools/rnl_scenery/plan.py; the two stone
 ## footbridges were rejected by the layout and do not exist). Verified by
 ## tools/navigation/probe_river_paths.gd, which walk-grid-routes every approach pair.
 ## Re-fitted square to the water with dry ends on 2026-10-22 (tools/rnl_scenery/fit_bridges.py;
-## tools/rnl_scenery/probe_bridges.gd checks these against the placed nodes).
+## tools/rnl_scenery/probe_bridges.gd checks these against the placed nodes). The Cottage bridge
+## (bridge_04, 2026-10-25, player board #2) joins Fluttershy's bank to the island between the
+## south and north channels, which the Market road and East bridges reach from the other sides.
 const CANALS := "res://world/water/ponyville_canals.json"
 const BRIDGE_ENDS := {
 	"bridge_01": [Vector2(58.43, -56.46), Vector2(71.57, -29.54)],   # South bridge
 	"bridge_02": [Vector2(194.96, -76.94), Vector2(197.04, -47.06)], # Market road bridge
 	"bridge_03": [Vector2(245.47, -18.62), Vector2(274.53, -11.38)], # East bridge
+	"bridge_04": [Vector2(211.03, -37.23), Vector2(196.97, -10.77)], # Cottage bridge
 }
 ## Approach pairs walked end to end by a pony, used instead of the computed ones. The South
 ## bridge's old skewed placement put its computed south point beside the ramp rail

@@ -7,7 +7,7 @@ Where something is a guess it says so.
 ## The project and the person
 
 - **Godot 4.5 GDScript** pony game ("Home: Equestria", mare-dev builds, `project.godot`
-  version `0.0.2-maredev` at the base commit). Desktop and VR. Ponies are LLM-driven
+  version `0.0.3-maredev` at the current base). Desktop and VR. Ponies are LLM-driven
   characters: each has a prompt, awareness, memory and an action vocabulary.
 - **The user** (called "dev" in code comments, "Anon" is the player character) plays on a
   **Windows export** and sends back `godot.log` files. They are casual, funny, often short on
@@ -40,9 +40,17 @@ Where something is a guess it says so.
   self-inflicted error. After any bulk edit, compile-check.
 - **Do not `pkill -f ...`**, it kills your own shell. The GitHub CLI is not available, use the
   GitHub MCP tools. Do not create PRs unless asked.
-- Branch: `claude/keen-goldberg-d5s3b1`, PR #4 on `anonymousmare/home-equestria`, base
-  `3617d97` ("build: 0.0.2-maredev"). Commit and push after each unit of work (a stop hook
-  nags about uncommitted changes). Commit trailers/attribution come from the session reminder.
+- Branches on `anonymousmare/home-equestria`: `claude/keen-goldberg-d5s3b1` (PR #4, chemistry),
+  `claude/dreamy-mccarthy-f430da` (taser, Twilight's voice, and the move to 0.0.3). Commit and push
+  after each unit of work (a stop hook nags about uncommitted changes). Commit trailers/attribution
+  come from the session reminder.
+- **Upstream releases** come from `https://github.com/homedevanon/home-equestria` as one squashed
+  commit per version with no shared history: `3617d97` = 0.0.2-maredev, `068e247` = 0.0.3-maredev.
+  When the user says the patch "isn't compatible with the new update", the game moved on and the
+  patch is overriding newer scripts with old copies. Fix: `git remote add upstream <url>`,
+  `git fetch --depth 1 upstream`, then `git diff --binary <old base> upstream/main | git apply -3
+  --index` on the working branch, resolve conflicts (so far always "keep both"), compile-check,
+  and rebuild the patch with `BASE=<new upstream commit>`.
 
 ## Shipping a patch to the user (important, this is how they test)
 
@@ -51,7 +59,7 @@ them as `zz_patch.pck` placed next to the exe (`tools/build/packs.gd` mounts eve
 order, later wins, so `zz_` goes last).
 
 ```
-GODOT=/path/to/Godot_v4.5-stable_linux.x86_64 BASE=3617d97 python3 tools/patch/build_patch.py
+GODOT=/path/to/Godot_v4.5-stable_linux.x86_64 BASE=068e247 python3 tools/patch/build_patch.py
 # -> build/patch/zz_patch.pck   (gitignored)
 ```
 

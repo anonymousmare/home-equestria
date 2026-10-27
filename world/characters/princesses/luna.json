@@ -3,12 +3,11 @@
   "name": "Princess Luna",
   "tag": "luna",
   "prompt": "res://world/characters/princesses/luna.md",
-  "tts_speaker_id": 0,
+  "tts_speaker_id": 14,
   "tts_default_emotion": "neutral",
   "tts_style_strength": 1.0,
   "earshot_m": 10.0,
-  "voice_status": "Ponese; princess TTS voice not yet selected",
-  "voice_mode": "ponese",
+  "voice_status": "character voice",
   "chatter_bank": "background_mid",
   "chatter_pitch": 0.9
 }

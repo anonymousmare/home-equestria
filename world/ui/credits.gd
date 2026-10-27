@@ -9,6 +9,10 @@ const RNL_PONYVILLE := [
 	{"name": "LessMAN", "role": "Modelling, optimization and textures\nTools and production workflow"},
 	{"name": "Suroguner", "role": "Schoolhouse model"},
 ]
+## dev 2026-10-26: "Anonymous Playtester - Co-dev, Playtester, contributing features and code".
+const CONTRIBUTORS := [
+	{"name": "Anonymous Playtester", "role": "Co-dev, Playtester, contributing features and code"},
+]
 
 const NOTICES := "res://world/ui/credits/notices.json"
 static var _data: Dictionary = {}
@@ -43,6 +47,8 @@ static func entries(section: String) -> Array[Dictionary]:
 		for entry: Dictionary in RNL_PONYVILLE:
 			names.append(str(entry.name) + "\n" + str(entry.role))
 		result.append({"title": "RnL Ponyville", "text": "\n\n".join(names)})
+		for entry: Dictionary in CONTRIBUTORS:
+			result.append({"title": str(entry.name), "text": str(entry.role)})
 	for entry: Variant in _data.get(section, []):
 		if entry is Dictionary and entry.get("title") is String and entry.get("text") is String:
 			result.append(entry)

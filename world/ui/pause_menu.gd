@@ -1,8 +1,9 @@
 extends Node
 ## Desktop Escape menu. Escape opens it when nothing else took the key (menus, chat, the
 ## map and the inspector close themselves on Escape in _input and mark it handled; this
-## listens in _unhandled_input). While open the world clock stops, the player cannot move
-## and the mouse is free; the SceneTree keeps running so saves, menus and streaming work.
+## listens in _unhandled_input). While open the whole world pauses (player bug board #15: ponies,
+## AI, physics, sounds and the clock stop); this menu, the saves panel and the save writer run
+## on (PROCESS_MODE_ALWAYS). The player cannot move and the mouse is free.
 ## VR keeps its left-menu-button settings panel, which offers the same quit actions.
 
 const TITLE_SCENE := "res://world/ui/title_screen.tscn"
@@ -31,10 +32,16 @@ var _old_lock := false
 var _mouse_mode: int = Input.MOUSE_MODE_VISIBLE
 var _input_states: Dictionary = {}
 var _in_save_menu := false
+## Auto-pause (dev 2026-10-26): ten real minutes without any key, mouse or pad input opens this
+## menu, so an unattended world stops instead of running on. Sleeping and talking by voice count as
+## being there; real time, so sleep's fast-forward does not shorten it.
+const IDLE_PAUSE_SECONDS := 600.0
+var _last_input_msec := 0
 
 
 func setup(host: Node, inventory_ui: Node, saves_panel: Node, settings_panel: Node, body: Node) -> void:
 	game = host; ui = inventory_ui; save_menu = saves_panel; settings_menu = settings_panel; player_body = body
+	_last_input_msec = Time.get_ticks_msec()
 	add_to_group("pause_menu")
 	if ui == null or not ui._desktop: return
 	canvas = CanvasLayer.new(); canvas.layer = 140; add_child(canvas); canvas.hide()
@@ -121,6 +128,21 @@ func refresh() -> void:
 
 
 # ------------------------------------------------------------------ open / close
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey or event is InputEventMouse or event is InputEventJoypadButton or event is InputEventJoypadMotion:
+		_last_input_msec = Time.get_ticks_msec()
+
+func _check_idle() -> void:
+	if canvas == null or opened or _in_save_menu or _other_menu_open(): _last_input_msec = Time.get_ticks_msec(); return
+	var sleeper: Node = get_tree().get_first_node_in_group("player_sleep")
+	var director: Node = get_tree().get_first_node_in_group("conversation_director")
+	var speech: Variant = director.get("speech") if director != null else null
+	if (sleeper != null and bool(sleeper.get("sleeping"))) or (speech != null and str(speech.get("state")) == "hearing"):
+		_last_input_msec = Time.get_ticks_msec(); return
+	# Held keys and mouse motion another node consumed before _input still count.
+	if Input.is_anything_pressed() or Input.get_last_mouse_velocity().length_squared() > 1.0: _last_input_msec = Time.get_ticks_msec(); return
+	if Time.get_ticks_msec() - _last_input_msec >= int(IDLE_PAUSE_SECONDS * 1000.0): open()
+
 func _unhandled_input(event: InputEvent) -> void:
 	if canvas == null or not (event is InputEventKey) or not event.pressed or event.echo: return
 	if (event as InputEventKey).physical_keycode != KEY_ESCAPE: return
@@ -149,6 +171,7 @@ func open() -> void:
 	if saves != null: saves.remember_view(self)
 	opened = true
 	_clock_paused = TimeOfDay.paused; TimeOfDay.paused = true
+	_pause_world(true)
 	_old_lock = player_body.controls_locked; player_body.controls_locked = true
 	_mouse_mode = Input.mouse_mode; Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	# Hotkeys of the other menus stay quiet while paused (F6/F7/I/J/M/T…).
@@ -163,7 +186,6 @@ func open() -> void:
 
 func close() -> void:
 	if not opened: return
-	_menu_sound("prop_ui_back")
 	opened = false
 	canvas.hide(); _page = ""
 	_settings.capturing = ""
@@ -171,10 +193,24 @@ func close() -> void:
 		if is_instance_valid(node): node.set_process_input(_input_states[node])
 	_input_states.clear()
 	TimeOfDay.paused = _clock_paused
+	_pause_world(false)
+	_menu_sound("prop_ui_back")
 	player_body.controls_locked = _old_lock
 	Input.mouse_mode = _mouse_mode
 	var saves := _saves()
 	if saves != null: saves.release_view(self)
+
+
+## Pauses the SceneTree; the menus and the save writer keep running.
+func _pause_world(paused: bool) -> void:
+	for node: Variant in [self, save_menu, _saves()]:
+		if is_instance_valid(node): (node as Node).process_mode = Node.PROCESS_MODE_ALWAYS
+	get_tree().paused = paused
+
+
+## A load or quit replaces the scene; the next world must not start paused.
+func _exit_tree() -> void:
+	if opened: get_tree().paused = false
 
 
 func _show(page_name: String) -> void:
@@ -190,6 +226,8 @@ func _show(page_name: String) -> void:
 
 
 func _menu_sound(event: String) -> void:
+	# The sound mixer pauses with the world; a click queued now would play on resume.
+	if get_tree().paused: return
 	var camera: Camera3D = VIEW.camera(self)
 	if camera != null: SOUNDS.play_at(camera, event, camera.global_position)
 
@@ -218,6 +256,7 @@ func _open_saves() -> void:
 
 
 func _process(_delta: float) -> void:
+	_check_idle()
 	if not _in_save_menu: return
 	if is_instance_valid(save_menu) and save_menu.opened: return
 	_in_save_menu = false

@@ -34,6 +34,20 @@ var _face_query:=PhysicsShapeQueryParameters3D.new()
 ## Desktop camera near plane, restored after a kiss: her face comes within 5 cm of his eye.
 var _near := -1.0
 const KISS_NEAR := .01
+## Bridal carry (pony_carry.gd cradle): her body stays in his arms and she reaches up to him with
+## her neck and a little of her chest (pony_carry.gd kiss_reach_goal); the kiss starts, as ever,
+## when their lips touch. His looking up or down must not drag her head round
+## after his view: the kiss keeps the view pitch it started with and follows only his turning.
+## Looking too far up or down, or her lips falling short of his, ends it instead of clipping.
+var _cradle_face := Basis()
+var _cradle_locked := false
+var _cradle_short := 0.0
+var _cradle_time := 0.0
+const CRADLE_LIPS_OUT := .012
+const CRADLE_LOOK_AWAY := 35.0 # Degrees up or down from where the kiss started.
+const CRADLE_MISS := .04 # Metres her lips may fall short of their goal...
+const CRADLE_MISS_SECONDS := .35 # ...for this long before she gives up,
+const CRADLE_GRACE := 1.2 # once she has had this long to reach up to him.
 
 
 func setup(view: Camera3D, movement_body: Node, left_controller: Node = null) -> void:
@@ -131,11 +145,27 @@ func _physics_step(_delta: float) -> void:
 		if _active.kind=="kiss" and not deep and not _her_kiss and not actor.is_held() and gap>.2 and not _touching_heads(mouth_world()).has(actor.get_instance_id()):stay=false
 		if actor.global_position.distance_to(camera.global_position)>1.8:stay=false
 		if not stay or _active.kind.is_empty():_end_contact()
+		elif _cradled(actor):
+			var face:=_steady_face()
+			# Bridal carried, her head is posed by the reach (pony_carry.gd), not the kiss pose.
+			var carry:Object=actor.get("carry")
+			var miss:float=float(carry.get("kiss_reach_miss")) if carry!=null and carry.get("kiss_reach_miss")!=null else 0.0
+			_cradle_time+=_delta
+			_cradle_short=_cradle_short+_delta if miss>CRADLE_MISS and _cradle_time>CRADLE_GRACE else 0.0
+			var lips:float=_active.mouth_point().distance_to(_active.target)
+			var away:=_looked_away()
+			if away or _cradle_short>CRADLE_MISS_SECONDS:
+				print("[bridal kiss] ended: %s at t=%.1fs lips-gap=%.1fcm miss=%.1fcm"%["looked away" if away else "out of reach",_cradle_time,lips*100.0,miss*100.0])
+				_end_contact()
+				return
+			_active.target=camera.global_position+face*(MOUTH_OFFSET+Vector3(0.0,0.0,-CRADLE_LIPS_OUT))
+			_active.eye=camera.global_position
+			_active.face=face
 		else:
 			_active.target=mouth_world()
 			_active.eye=camera.global_position
 			_active.face=camera.global_basis.orthonormalized()
-	_kiss_near(is_instance_valid(_active) and _active.kind=="kiss")
+	_kiss_near((is_instance_valid(_active) and _active.kind=="kiss") or _bridal_reaching())
 	# While she holds him in a deep kiss, the move stick does nothing (turning still works).
 	if is_instance_valid(body):
 		if _deep_kiss():body.set_meta("kiss_hold",true)
@@ -207,6 +237,7 @@ func try_kiss() -> bool:
 	_active=affection if affection.kind=="kiss" else null
 	if _active!=null:
 		_active.eye=camera.global_position;_active.face=camera.global_basis.orthonormalized()
+		if _cradled(nearest):print("[bridal kiss] start gap=%.1fcm"%(nearest.kiss_contact_distance(mouth,forward)*100.0))
 	kisses += 1
 	_next_kiss_ms = Time.get_ticks_msec() + COOLDOWN_MS
 	return true
@@ -268,9 +299,39 @@ func _attempt_hug() -> void:
 func kiss_from_pony(pony: Node3D) -> bool:
 	return begin_from_pony(pony)
 
+## She is bridal carried (pony_carry.gd cradle_goal).
+func _cradled(actor: Node) -> bool:
+	var carry: Object = actor.get("carry") if is_instance_valid(actor) else null
+	return carry != null and carry.get("cradle_goal") == true
+
+## A bridal-carried pony reaching up to his lips (pony_carry.gd kiss_reach): her muzzle comes as
+## close to his eyes as in a kiss, so the near plane drops for it too.
+func _bridal_reaching() -> bool:
+	for pony: Node3D in ponies:
+		if not is_instance_valid(pony) or not pony.has_method("is_held") or not pony.is_held(): continue
+		var carry: Object = pony.get("carry")
+		if carry != null and carry.get("kiss_reach") != null and float(carry.get("kiss_reach")) > 0.0: return true
+	return false
+
+## His view at the kiss's start, turned only as far as he has turned since.
+func _steady_face() -> Basis:
+	var view := camera.global_basis.orthonormalized()
+	var heading := Basis(Vector3.UP, view.get_euler().y)
+	if not _cradle_locked:
+		_cradle_face = heading.inverse() * view
+		_cradle_locked = true
+	return heading * _cradle_face
+
+## His view now pitched more than CRADLE_LOOK_AWAY from the kiss's start (turning doesn't count).
+func _looked_away() -> bool:
+	if not _cradle_locked: return false
+	var view := camera.global_basis.orthonormalized()
+	var now := Basis(Vector3.UP, view.get_euler().y).inverse() * view
+	return rad_to_deg((-now.z).angle_to(-_cradle_face.z)) > CRADLE_LOOK_AWAY
+
 func _end_contact() -> void:
 	if is_instance_valid(_active):_active.end()
-	_active=null;_her_kiss=false
+	_active=null;_her_kiss=false;_cradle_locked=false;_cradle_short=0.0;_cradle_time=0.0
 	if is_instance_valid(body) and body.has_meta("kiss_hold"):body.remove_meta("kiss_hold")
 	_kiss_near(false)
 

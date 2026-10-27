@@ -163,6 +163,10 @@ func anger(id: String) -> float:
 		"annoyed": return 40.0
 	return 0.0
 
+## False for a filly or colt pony and for a young player; unregistered ponies (tests) count as adults.
+func eligible_for_romance(id: String) -> bool:
+	return bool(adults.get(id, true)) and not _young_player()
+
 func eligible(id: String, kind: String) -> bool:
 	if not adults.has(id) or kind not in KINDS: return false
 	if kind in ROMANTIC and (not adults[id] or _young_player()): return false

@@ -608,22 +608,6 @@
 			"samples": 52,
 			"source": "res://world/characters/background/sugar_belle_hair.scn"
 		},
-		"sunset_shimmer": {
-			"anchor": [
-				-0.00251457653939723969,
-				0.565603554248809814,
-				0.252136290073394775
-			],
-			"anchor_version": 1,
-			"mount": [
-				0.0,
-				0.0750000029802322388,
-				-0.0250000003725290298
-			],
-			"mtime": 1789253806,
-			"samples": 20,
-			"source": "res://world/characters/background/sunset_shimmer_hair.scn"
-		},
 		"sunshower_raindrops": {
 			"anchor": [
 				0.00037904130294919014,

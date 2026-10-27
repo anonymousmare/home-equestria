@@ -58,13 +58,18 @@ static func path_ready(nav: Node, result: Dictionary, request_id: int, completed
 
 ## The next leg of a long trip: a point up to JOURNEY_LEG along the way, turned aside
 ## on retries when the straight line meets water, cliffs or buildings.
+const ENTRY_REACH := 3.0
+
 static func next_leg(nav: Node) -> void:
 	var pony: CharacterBody3D = nav.pony
 	var from := pony.global_position
 	var leg_length: float = nav.JOURNEY_LEG
 	var via: Array = nav._journey_via
-	# Bridge approaches in order: passed once she is within 12 m of one.
-	while not via.is_empty() and _flat(from, via[0]) < 12.0:
+	# Bridge approaches in order: the far one is passed once she is within 12 m of it, the near
+	# (entry) one only within ENTRY_REACH. At 12 m she cut diagonally onto the East bridge's steep
+	# deck end and turned on it, crawling at 0.2 m/s until the route gave up (player board #21,
+	# 2026-10-26); from the approach point, 5 m out on the span's line, she walks on straight.
+	while not via.is_empty() and _flat(from, via[0]) < (ENTRY_REACH if via.size() > 1 else 12.0):
 		via.pop_front()
 	if not via.is_empty():
 		var bridge: Vector3 = via[0]

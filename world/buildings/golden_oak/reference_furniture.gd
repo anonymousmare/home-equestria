@@ -167,6 +167,8 @@ static func fireplace(parent: Node3D, at: Vector3, yaw: float) -> void:
 	KIT.box(frame, "FireplaceRecess", Vector3(0.91, 1.13, 0.035), Vector3(0, 0.59, -0.15), soot)
 	KIT.disc(frame, "Hearthstone", 0.64, 0.07, Vector3(0, 0.035, 0.02), light_stone)
 	KIT.tube(frame, "SculptedMantel", PackedVector3Array([Vector3(-0.72, 1.30, 0.03), Vector3(-0.3, 1.4, 0.03), Vector3(0.3, 1.4, 0.03), Vector3(0.72, 1.3, 0.03)]), 0.105, light_stone)
+	# One solid block over the hearth arch, recess and mantel (player bug board #9: it had none).
+	KIT.box_body(frame, "FireplaceSolid", Vector3(1.3, 1.5, 0.42), Vector3(0, 0.75, -0.05))
 	for index: int in 3:
 		KIT.tube(frame, "HearthLog", PackedVector3Array([Vector3(-0.30, 0.15 + index * 0.035, -0.05 + index * 0.1), Vector3(0.30, 0.15 + index * 0.035, 0.08 - index * 0.04)]), 0.065, KIT.material("755047"))
 	var ember := KIT.material("d58a4e")

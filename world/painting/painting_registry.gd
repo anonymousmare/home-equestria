@@ -11,6 +11,9 @@ const SAVE_FILE = preload("res://world/save_file.gd")
 const VERSION := 1
 const MAX_ENTRIES := 512
 const MAX_LABEL := 80
+## A finished picture is a painting unless its row says otherwise: "photo" for the photo camera's
+## prints (world/items/photo_camera.gd), which show as a small print instead of a framed canvas.
+const KIND_PHOTO := "photo"
 ## Empty canvas cells, flattened (the same value as the core's painting_io.EMPTY_COLOR).
 const CANVAS_COLOR := Color8(242, 238, 228)
 ## Easel roots (easel_build.gd) join this group so a load or restore can refresh their faces.
@@ -54,6 +57,7 @@ static func valid_state(value: Variant) -> bool:
 		if not row.get("orient") in ["P", "L"]: return false
 		var label: Variant = row.get("label", "")
 		if not label is String or (label as String).length() > MAX_LABEL: return false
+		if row.has("kind") and row.get("kind") != KIND_PHOTO: return false
 	return true
 
 ## A slot's own pointers and labels replace the current ones; the images are shared files.
@@ -111,11 +115,15 @@ static func new_serial() -> String:
 		serial = "%d-%04d-%d" % [int(Time.get_unix_time_from_system()), _serial, randi() % 1000]
 	return serial
 
-static func add_art(id: String, orient: String, label: String) -> void:
+static func add_art(id: String, orient: String, label: String, kind: String = "") -> void:
 	if not valid_art_id(id) or not orient in ["P", "L"]: return
 	if not _state.art.has(id) and _state.art.size() >= MAX_ENTRIES: return
 	_state.art[id] = {"orient": orient, "label": label.left(MAX_LABEL)}
+	if kind == KIND_PHOTO: _state.art[id].kind = KIND_PHOTO
 	_write()
+
+static func is_photo(id: String) -> bool:
+	return str((_state.art.get(id, {}) as Dictionary).get("kind", "")) == KIND_PHOTO
 
 static func art(id: String) -> Dictionary:
 	return (_state.art.get(id, {}) as Dictionary).duplicate()
@@ -255,7 +263,9 @@ static func _clean(value: Dictionary) -> Dictionary:
 	for key: String in wips:
 		next.wip[key] = {"file": str(wips[key].file), "orient": str(wips[key].orient)}
 		if not str(wips[key].get("label", "")).is_empty(): next.wip[key].label = str(wips[key].label)
-	for id: String in arts: next.art[id] = {"orient": str(arts[id].orient), "label": str(arts[id].get("label", ""))}
+	for id: String in arts:
+		next.art[id] = {"orient": str(arts[id].orient), "label": str(arts[id].get("label", ""))}
+		if str(arts[id].get("kind", "")) == KIND_PHOTO: next.art[id].kind = KIND_PHOTO
 	return next
 
 static func _write() -> void:

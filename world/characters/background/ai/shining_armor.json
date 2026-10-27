@@ -3,12 +3,11 @@
   "name": "Shining Armor",
   "tag": "shining_armor",
   "prompt": "res://world/characters/background/ai/shining_armor.md",
-  "tts_speaker_id": 6,
+  "tts_speaker_id": 21,
   "tts_default_emotion": "neutral",
   "tts_style_strength": 1.0,
   "earshot_m": 10.0,
-  "voice_status": "Ponese; no approved male TTS voice bank yet",
+  "voice_status": "character voice",
   "chatter_bank": "background_low",
-  "chatter_pitch": 0.95,
-  "voice_mode": "ponese"
+  "chatter_pitch": 0.95
 }

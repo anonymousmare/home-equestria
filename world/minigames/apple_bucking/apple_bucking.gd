@@ -153,7 +153,8 @@ func refresh() -> void:
 			"text":"The apples are ripe. Buck a trunk and I'll gather them into the baskets.", "markers":activity_markers()})
 	if _notice != null:
 		# A farm sign, not an instruction board (dev 2026-09-30); the trunk prompt shows how.
-		_notice.text = "Sweet Apple Acres" + ("\nHarvest time" if count > 0 else "")
+		var done_today: bool = count == 0 and bool(now.ripe) and ledger.baskets_on(when) >= STATE.DAILY_BASKETS
+		_notice.text = "Sweet Apple Acres" + ("\nHarvest time" if count > 0 else ("\nBaskets full today" if done_today else ""))
 	# No remote physics bodies: suspended apples resume at saved positions when
 	# the player returns. Only the bounded loose set is inspected once a second.
 	if not player_near_orchard(55.0):

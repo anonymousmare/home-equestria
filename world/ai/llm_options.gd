@@ -10,7 +10,7 @@ const SPECS := {
 	"presence_penalty": ["Presence penalty", -2.0, 2.0, 0.05, 0.0],
 	"seed": ["Seed", 0, 2147483647, 1, 0],
 	"max_tokens": ["Output tokens", 1, 131072, 1, 220],
-	"timeout": ["Timeout (seconds)", 5, 120, 1, 90],
+	"timeout": ["Timeout (seconds)", 5, 3600, 1, 90],
 }
 
 static func validate(value: Variant) -> String:

@@ -13,6 +13,11 @@ var head_offsets: Array[Vector3] = []
 var enabled := true
 var skull_frame := Transform3D.IDENTITY
 var _head_rest_inverse := Transform3D.IDENTITY
+## 0..1, set by pony_carry.gd while she is bridal carried: her head tips far back against her neck
+## there, and the back of the mane (on mChest/mNeck) would fold into her throat. Those bones then
+## ride along with the skull instead, chest less than neck.
+var follow_head := 0.0
+const FOLLOW_SHARE := [0.6, 1.0] # mChest, mNeck.
 const PROFILE := preload("res://tools/crowd_cpu_profile.gd")
 
 func bind(body_sk: Skeleton3D, head_sk: Skeleton3D, hair_sk: Skeleton3D,
@@ -49,6 +54,9 @@ func _head_updated() -> void:
 	for i in head_pairs.size():
 		var pair := head_pairs[i]
 		var posed := head.get_bone_global_pose(pair.x)
+		if i < 2 and follow_head > 0.0:
+			var skull := head.get_bone_global_pose(head_pairs[2].x) * _head_rest_inverse
+			posed = posed.interpolate_with(skull * head.get_bone_global_rest(pair.x), follow_head * FOLLOW_SHARE[i])
 		if i == 2:
 			var motion := posed * _head_rest_inverse
 			posed = motion * skull_frame * motion.affine_inverse() * posed

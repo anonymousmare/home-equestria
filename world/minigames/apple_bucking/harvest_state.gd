@@ -2,6 +2,10 @@ extends RefCounted
 ## Serializable orchard ledger; no nodes, wallet calls or filesystem access.
 const VERSION: int = 2
 const REWARD: int = 20
+## Baskets (trees) Applejack takes on per in-game day (dev 2026-10-26, player bug board #16: 20 bits
+## a basket, six a day). Each tree row remembers the day it was started ("day", optional in older
+## saves); an unfinished basket can always be finished.
+const DAILY_BASKETS: int = 6
 var trees: Dictionary = {}
 var _committing: bool = false
 
@@ -22,8 +26,16 @@ func available(id: String, day: float, season_days: int) -> bool:
 	# change; calendar changes must not strand an unpaid partial harvest.
 	if not prior.is_empty() and not prior.paid:
 		return prior.released.size() < int(prior.count)
-	if not now.ripe: return false
+	if not now.ripe or baskets_on(day) >= DAILY_BASKETS: return false
 	return prior.is_empty() or (prior.paid and int(prior.cycle) < int(now.cycle) and day >= float(prior.next_ripe_day))
+
+## Baskets started on this in-game day.
+func baskets_on(day: float) -> int:
+	var today: int = int(floor(maxf(day, 0.0)))
+	var count: int = 0
+	for row: Dictionary in trees.values():
+		if int(row.get("day", -1)) == today: count += 1
+	return count
 
 func growth(id: String, day: float, season_days: int) -> float:
 	var now: Dictionary = calendar(day, season_days)
@@ -39,7 +51,7 @@ func begin(id: String, count: int, day: float, season_days: int) -> bool:
 	if not prior.is_empty() and not prior.paid: return false
 	var now: Dictionary = calendar(day, season_days)
 	trees[id] = {"cycle": int(now.cycle), "count": count, "released": [], "collected": [], "paid": false,
-		"next_ripe_day": int(now.next_autumn)}
+		"next_ripe_day": int(now.next_autumn), "day": int(floor(maxf(day, 0.0)))}
 	return true
 
 ## Stable original fruit indices, released exactly once by a certified strike.
@@ -116,6 +128,9 @@ static func valid(value: Variant) -> bool:
 			var number: Variant = row.get(key)
 			if not (number is int or number is float) or not is_finite(float(number)) or float(number) != floor(float(number)) or float(number) < 0: return false
 		if row.count < 1 or row.count > 64 or row.cycle > 10000000 or row.next_ripe_day > 1000000000: return false
+		if row.has("day"):
+			var started: Variant = row.day
+			if not (started is int or started is float) or not is_finite(float(started)) or float(started) != floor(float(started)) or float(started) < 0 or float(started) > 1000000000: return false
 		var released: Dictionary = {}
 		if value.version == VERSION:
 			if not row.get("released") is Array: return false
@@ -140,6 +155,7 @@ func restore(value: Variant) -> bool:
 	for id: String in trees:
 		var row: Dictionary = trees[id]
 		for key: String in ["cycle", "count", "next_ripe_day"]: row[key] = int(row[key])
+		if row.has("day"): row.day = int(row.day)
 		var indices: Array = []
 		for index: Variant in row.collected: indices.append(int(index))
 		row.collected = indices

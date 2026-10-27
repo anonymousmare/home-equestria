@@ -332,6 +332,9 @@ func _place_lines(id: String, local_limit := 30) -> String:
 	return "(none)" if lines.is_empty() else "\n".join(lines)
 
 
+## A place this close is where she already stands (place_directory.gd prompt_lines distance).
+const HERE_METRES := 6
+
 ## Where she can go, compact (dev 2026-10-22: 75 "id = label (kind, ~N m)" lines were 4.5 KB of every
 ## request, 44 of them distant regions with metre counts). Nearest places first; a place whose own label
 ## resolves to it alone (place_directory.gd match_name gives an exact label +10) is listed by name,
@@ -350,9 +353,15 @@ func _location_block(id: String, context: Dictionary, local_limit := LOCAL_PLACE
 		var place_id := line.left(at)
 		var label := line.substr(at + 3)
 		var kind := ""
+		var here := false
 		var open := label.rfind(" (")
 		if open > 0 and label.ends_with(")"):
-			kind = label.substr(open + 2, label.length() - open - 3).get_slice(",", 0)
+			var inside := label.substr(open + 2, label.length() - open - 3)
+			kind = inside.get_slice(",", 0)
+			# Standing at it already (Derpy reached the market aisle, then "led" Anon there and stood
+			# still saying "follow me", dev 2026-10-26): she must know, not offer to walk there.
+			var metres := inside.get_slice("~", 1).to_int() if "~" in inside else 999
+			here = metres <= HERE_METRES and not kind.begins_with("region")
 			label = label.left(open)
 		if label == "painted spot":
 			local.append(place_id); continue
@@ -363,7 +372,7 @@ func _location_block(id: String, context: Dictionary, local_limit := LOCAL_PLACE
 		if kind.begins_with("region"):
 			if regions.size() < region_limit: regions.append(label if by_name else "%s = %s" % [label, place_id])
 		elif local.size() < local_limit:
-			local.append(label if by_name else "%s = %s" % [label, place_id])
+			local.append((label if by_name else "%s = %s" % [label, place_id]) + (" (YOU ARE HERE: do not go_to or lead to it)" if here else ""))
 	var text := "LOCATIONS (nearest first): " + "; ".join(local)
 	if not regions.is_empty(): text += "\nREGIONS (nearest first): " + "; ".join(regions)
 	return text + "\nAny other mapped place also works by its exact name. A named business and a resident's house are distinct destinations: guide to the named business itself, not the resident's separate home."

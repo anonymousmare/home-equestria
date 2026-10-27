@@ -41,6 +41,8 @@ static func definition(id: String) -> Dictionary:
 	if ITEMS.has(id): return ITEMS[id]
 	if SHOP.has(id): return SHOP.definition(id)
 	if is_art(id):
+		if PAINTINGS.is_photo(PAINTINGS.art_id(id)):
+			return {"name": "Photo", "description": "A photo you took. Hang it, set it down, keep it, or show it to a pony.", "stack": 1, "art": true}
 		var label := str(PAINTINGS.art(PAINTINGS.art_id(id)).get("label", ""))
 		return {"name": "Painting: " + label if not label.is_empty() else "Painting", "description": "Your own painting from the easel. Hang it on a wall at home, set it down anywhere, or keep it.", "stack": 1, "art": true}
 	if is_book(id):

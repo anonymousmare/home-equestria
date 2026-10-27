@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Home: Equestria"
 config/description="Cozy VR life-sim in Equestria."
-config/version="0.0.2-maredev"
+config/version="0.0.3-maredev"
 run/main_scene="res://world/ui/title_screen.tscn"
 config/use_custom_user_dir=true
 config/custom_user_dir_name="home-equestria-public"
@@ -32,6 +32,7 @@ Settings="*res://autoload/settings.gd"
 Quality="*res://autoload/quality.gd"
 TimeOfDay="*res://autoload/time_of_day.gd"
 ZoneManager="*res://autoload/zone_manager.gd"
+Mods="*res://world/modding/mods.gd"
 
 [debug]
 

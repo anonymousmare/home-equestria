@@ -32,7 +32,7 @@ const PLACEMENTS: Array[Dictionary] = [
 	# Trimmed to things with a use (dev 2026-10-14: "do we NEED 100 little things"): the picnic
 	# blanket and a pillow. The rest of the old stock is listed in world/shop/archived_stock.json.
 	{"id": "ponyville:market:goods", "anchor": "RNLScenery/Town/Market/tent_friagram_lightbrown_01", "at": Vector3(-0.8, 0.95, 6.45), "counter": true, "columns": 1,
-		"items": ["goods:folded-blanket", "goods:pillow"], "spacing": Vector2(0.7, 0.62)},
+		"items": ["goods:folded-blanket", "goods:pillow", "goods:camera"], "spacing": Vector2(0.7, 0.62)},
 	{"id": "ponyville:market:furniture", "anchor": "RNLScenery/Town/Market/tent_friagram_pinkish_01", "at": Vector3(0, 0.95, 6.3), "counter": true, "columns": 3,
 		"items": ["goods:footstool", "goods:bedside-table", "goods:rug-round", "goods:curtains", "goods:table-lamp", "goods:picture", "goods:potted-plant", "goods:easel"], "spacing": Vector2(0.7, 0.5),
 		# Full-sized goods use distinct counter surfaces. The rug hangs behind the plants;

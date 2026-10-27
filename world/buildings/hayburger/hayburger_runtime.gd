@@ -204,17 +204,17 @@ func _pay_wage(result: Dictionary) -> void:
 	if wage > 0 and is_instance_valid(game) and is_instance_valid(game.get("inventory")):
 		paid = game.inventory.inventory.credit_bits(wage)
 	var served: int = int(result.get("served", 0))
-	last_summary = "Shift over: %d hayburger%s served, %.1f h behind the counter.\nWage %s%s." % [
-		served, "" if served == 1 else "s", duty_hours, CURRENCY.amount(wage),
+	last_summary = "Shift over: %d hayburger%s served (%s in tips), %.1f h behind the counter.\nWage %s%s." % [
+		served, "" if served == 1 else "s", CURRENCY.amount(served * SHIFT.REWARD_BITS), duty_hours, CURRENCY.amount(wage),
 		" paid" if paid else " could not be saved; ask again next shift"]
 	last_summary_until_ms = Time.get_ticks_msec() + 90000
 	duty_hours = 0.0
 
 func _pay(amount: int) -> bool:
-	if not business_open or not _working or amount != 20 or not is_instance_valid(game): return false
+	if not business_open or not _working or amount != SHIFT.REWARD_BITS or not is_instance_valid(game): return false
 	var orders: Array = shift.snapshot().orders
 	if orders.is_empty() or not customers.can_serve(orders[0].id): return false
-	return game.inventory.inventory.credit_bits(20)
+	return game.inventory.inventory.credit_bits(SHIFT.REWARD_BITS)
 
 func _served(order: Dictionary, _reward: int) -> void:
 	_sync_order_context()

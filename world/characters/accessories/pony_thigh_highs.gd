@@ -19,6 +19,9 @@ static func attach(pony: Node3D, colour: Color) -> MeshInstance3D:
 	if identity != null:
 		if identity.get("stallion") == true: variant = "stallion"
 		elif identity.get("filly") == true: variant = "filly"
+	# The princesses wear their own fitted bodies (princess_hybrid.gd) and need their own pair.
+	var princess := str(identity.get("id")) if identity != null else ""
+	if princess in ["celestia", "luna"] and ResourceLoader.exists(DIRECTORY + princess + ".res"): variant = princess
 	var node := MeshInstance3D.new()
 	node.name = "Wear_socks"
 	node.mesh = load(DIRECTORY + variant + ".res")

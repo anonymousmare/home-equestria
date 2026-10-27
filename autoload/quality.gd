@@ -758,6 +758,10 @@ func _apply_render_scale(vp: Viewport, cfg: Dictionary, android: bool = OS.has_f
 		var size := Vector2(vp.get_visible_rect().size)
 		if size.x * size.y > AUTO_SCALE_PIXELS:
 			scale = minf(scale, snappedf(maxf(sqrt(AUTO_SCALE_PIXELS / (size.x * size.y)), 0.5), 0.05))
+	# Headsets render their eye buffers 1:1 (see _apply_viewport_settings); a window resize must
+	# not bring the preset's scale back.
+	if xr_mode or android:
+		scale = 1.0; mode = Viewport.SCALING_3D_MODE_BILINEAR
 	# FSR2 at 100% or above is a costly native anti-aliasing pass, not an upscale.
 	if mode == Viewport.SCALING_3D_MODE_FSR2 and scale >= 0.999: mode = Viewport.SCALING_3D_MODE_BILINEAR
 	# FSR2 is temporal and smooths edges itself; a post filter on top only blurs.
@@ -786,10 +790,11 @@ func _apply_viewport_settings(android: bool = OS.has_feature("android")) -> void
 	vp.texture_mipmap_bias = cfg.get("mipmap_bias", 0.0)
 	# Quest (Mobile renderer, OpenXR swapchain): a scaled 3D buffer breaks every draw list
 	# ("custom region must be contained within the framebuffer rectangle", frozen view);
-	# the eye buffers stay 1:1 there.
+	# the eye buffers stay 1:1 there (_apply_render_scale). PC headsets too (player report
+	# 2026-10-25, PSVR2 through SteamVR on Windows, Low preset's 0.7): the scaled picture filled
+	# only the top-left of each eye and of the desktop mirror instead of being stretched over it.
+	# The runtime's own resolution setting (SteamVR per-game resolution) is the VR resolution knob.
 	if android:
-		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-		vp.scaling_3d_scale = 1.0
 		# Headset (dev 2026-09-29: "so pixelized, the moving pixels hurt"): MSAA 2x is near-free on
 		# a tile GPU and the only anti-aliasing that holds still in VR; no FXAA pass, no mip bias.
 		vp.msaa_3d = Viewport.MSAA_2X

@@ -56,6 +56,7 @@ func setup(page_size: Vector2, text_size: int, back_text: String, in_xr := false
 			_lighting_controls = load("res://world/debug/lighting_page.gd").new()
 			list.add_child(_lighting_controls)
 			_lighting_controls.setup(font_size, _redraw)
+		if str(tab[0]) == "Mods": _build_mods(list)
 		if str(tab[0]) == "VR comfort":
 			_note(list, "A comfort vignette is not available yet.")
 		if str(tab[0]) == "Controls":
@@ -106,10 +107,76 @@ func _row(list: VBoxContainer, label_text: String, key: String) -> void:
 		if xr: bind.disabled = true
 		return
 	_button(line, "◀", func(): Settings.cycle(key, -1))
-	var value := Label.new(); value.custom_minimum_size.x = font_size * 12; value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var value: Control
+	if bool(Settings.SPECS.get(key, {}).get("typed", false)) and not xr:
+		# A typed exact value (mouse sensitivity): Enter or leaving the field applies it.
+		var field := LineEdit.new(); field.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		field.text_submitted.connect(func(text: String): _apply_typed(key, text); field.release_focus())
+		field.focus_exited.connect(func(): _apply_typed(key, field.text))
+		value = field
+	else:
+		var text_label := Label.new(); text_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		value = text_label
+	value.custom_minimum_size.x = font_size * 12
 	value.add_theme_font_size_override("font_size", font_size); line.add_child(value)
 	_values[key] = value
 	_button(line, "▶", func(): Settings.cycle(key, 1))
+
+
+## Settings → Mods (world/modding/mod_loader.gd): every mod pack found this launch with an On/Off
+## switch, kept in user://mods/mods.cfg for the next launch.
+func _build_mods(list: VBoxContainer) -> void:
+	var loader := preload("res://world/modding/mod_loader.gd")
+	_note(list, "Mods can run code on your computer. Only install mods from people you trust. Switches apply the next time the game starts.")
+	_button(list, "Open mods folder", _open_mods_folder).size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if loader.packs.is_empty():
+		_note(list, "No mods installed. Put .pck mods in the mods folder, then restart the game.")
+		return
+	var disabled := loader.disabled_files()
+	for pack: Dictionary in loader.packs:
+		var line := HBoxContainer.new(); line.add_theme_constant_override("separation", 6); list.add_child(line)
+		var label := Label.new(); label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL; label.add_theme_font_size_override("font_size", font_size - 2)
+		label.text = _mod_text(pack, loader.mods); line.add_child(label)
+		if str(pack.file).begins_with("(source)"): continue
+		var file := str(pack.file)
+		var toggle := _button(line, "", func() -> void: pass)
+		toggle.custom_minimum_size.x = font_size * 6
+		var show := func() -> void:
+			var on := file not in loader.disabled_files()
+			toggle.text = "On" if on else "Off"
+			if on != bool(pack.enabled): Settings.message = "Restart the game to apply mod changes."
+			refresh()
+		toggle.pressed.connect(func() -> void: loader.set_enabled(file, file in loader.disabled_files()); show.call())
+		toggle.text = "Off" if file in disabled else "On"
+
+
+func _mod_text(pack: Dictionary, mods: Array) -> String:
+	var lines := PackedStringArray()
+	for mod: Dictionary in mods:
+		if mod.file != pack.file: continue
+		var head := str(mod.name) + ("  " + str(mod.version) if not str(mod.version).is_empty() else "")
+		if not str(mod.author).is_empty(): head += "  by " + str(mod.author)
+		lines.append(head)
+		if not str(mod.description).is_empty(): lines.append(str(mod.description))
+		if not mod.errors.is_empty(): lines.append("Not loaded: " + "; ".join(PackedStringArray(mod.errors)))
+	if lines.is_empty(): lines.append(str(pack.file) + "  (replaces game files)")
+	else: lines.append(str(pack.file))
+	if not str(pack.error).is_empty(): lines.append("Not loaded: " + str(pack.error))
+	return "\n".join(lines)
+
+
+func _open_mods_folder() -> void:
+	var folder := ProjectSettings.globalize_path(preload("res://world/modding/mod_loader.gd").USER_DIR)
+	DirAccess.make_dir_recursive_absolute(folder)
+	Settings.message = ("Mods folder: " if OS.shell_open(folder) == OK else "Could not open a file manager. The mods folder is ") + folder
+	refresh()
+
+
+func _apply_typed(key: String, text: String) -> void:
+	var digits := text.strip_edges().trim_suffix("%").strip_edges()
+	if digits.is_valid_int(): Settings.set_value(key, digits.to_int())
+	refresh()
 
 
 func _note(list: VBoxContainer, text: String) -> Label:
@@ -165,6 +232,8 @@ func refresh() -> void:
 		if key.begins_with("bind:"):
 			var action := key.get_slice(":", 1)
 			(node as Button).text = "Press a key…" if capturing == action else Settings.key_name(Settings.binding(action))
+		elif node is LineEdit:
+			if not node.has_focus(): (node as LineEdit).text = Settings.display(key)
 		else:
 			(node as Label).text = Settings.display(key)
 	if is_instance_valid(_quality_note): _quality_note.text = _quality_description()

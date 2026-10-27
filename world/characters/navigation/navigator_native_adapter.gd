@@ -97,6 +97,12 @@ static func on_event(nav: Node, event: Dictionary) -> void:
 	if int(event.get("intent", -1)) != nav._native_intent or not nav._has_target: return
 	match int(event.get("kind", 0)):
 		1: # arrived
+			# At a bridge entry point (navigator_routes.gd ENTRY_REACH): only that leg is done.
+			var via: Array = nav._journey_via
+			if nav._journey_goal.is_finite() and via.size() > 1 and Vector2(nav.target.x - via[0].x, nav.target.z - via[0].z).length() < .5:
+				via.pop_front()
+				nav._next_leg()
+				return
 			nav.arrival_alternative = nav.arrival_alternative or bool(event.get("alternative", false))
 			nav._has_target = false
 			nav._journey_goal = Vector3.INF
