@@ -12,6 +12,8 @@ const FAMILIES := [
 	["golden_harvest", "noi"],
 	# User requested a random background guardian; selected once, retained across launches.
 	["comet_tail", "archer"],
+	# Octavia lives with Vinyl (dev 2026-10-25: "make tavi live with vinyl"). Vinyl keeps her house.
+	["vinyl_scratch", "octavia_melody"],
 ]
 
 static func members(id: String) -> Array:

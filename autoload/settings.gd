@@ -114,7 +114,9 @@ const SPECS := {
 	"video/vsync": {"type": "bool", "labels": ["Off", "On"], "note": "desktop"},
 	"video/fps_cap": {"type": "choice", "options": [[0, "Unlimited"], [30, "30"], [60, "60"], [72, "72"], [90, "90"], [120, "120"], [144, "144"], [165, "165"], [240, "240"]], "note": "desktop"},
 	"video/window": {"type": "choice", "options": [["windowed", "Windowed"], ["fullscreen", "Fullscreen"], ["exclusive", "Exclusive fullscreen (can be slower)"]]},
-	"controls/mouse_sensitivity": {"type": "int", "min": 25, "max": 400, "step": 25, "fmt": "%d%%"},
+	# Player board #3 (2026-10-25): 25 % steps were too coarse for high-DPI mice. Any whole
+	# percent is valid and can be typed; the arrows move by `arrow_step`.
+	"controls/mouse_sensitivity": {"type": "int", "min": 1, "max": 400, "step": 1, "arrow_step": 5, "typed": true, "fmt": "%d%%"},
 	"controls/invert_y": {"type": "bool", "labels": ["Off", "On"]},
 	"controls/fov": {"type": "int", "min": 60, "max": 110, "step": 5, "fmt": "%d°"},
 	"vr/start_mode": {"type": "choice", "options": [["ask", "Ask every launch"], ["auto", "Auto (headset if found)"], ["on", "On"], ["off", "Off"]], "note": "applies on next launch"},
@@ -177,6 +179,7 @@ const TABS := [
 	["World", [["Full day", "world/day_length_minutes"], ["Season length", "world/season_days"], ["Title screen view", "title/view"], ["Rain & snow frequency", "world/weather_frequency"], ["Opening", "world/opening"], ["Pony size", "ponies/size"]]],
 	["Accessibility", [["Subtitles", "access/subtitles"], ["Subtitle size", "access/subtitle_scale"], ["Pony speech text", "access/speech_text"], ["Menu text size", "access/ui_scale"], ["Reduced motion", "access/reduced_motion"]]],
 	["Reading", [["Paper", "reading/paper"], ["Font", "reading/font"], ["Text size", "reading/size"]]],
+	["Mods", []],
 ]
 ## Shadow tiers the "Shadows" row selects on top of the quality preset (Quality.user_overrides).
 const SHADOW_TIERS := {
@@ -227,6 +230,8 @@ func _init() -> void:
 	# Exported builds: data packs beside the executable, before anything reads res:// from
 	# them (tools/build/packs.gd; a no-op in source runs).
 	if ResourceLoader.exists(PACKS): (load(PACKS) as Script).call("load_extra_packs")
+	# Mods load after the game's packs and before any other game script (world/modding/mod_loader.gd).
+	preload("res://world/modding/mod_loader.gd").boot()
 	_register_mip_loader()
 
 
@@ -381,7 +386,7 @@ func cycle(key: String, step: int) -> String:
 		"bool":
 			set_value(key, not bool(get_value(key)))
 		"int":
-			set_value(key, clampi(int(get_value(key)) + int(spec.step) * step, int(spec.min), int(spec.max)))
+			set_value(key, clampi(int(get_value(key)) + int(spec.get("arrow_step", spec.step)) * step, int(spec.min), int(spec.max)))
 		"float":
 			var presets: Array = spec.presets
 			var current := float(get_value(key)); var index := presets.find(current)

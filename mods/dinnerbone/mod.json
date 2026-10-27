@@ -1,0 +1,9 @@
+{
+	"id": "dinnerbone",
+	"name": "Dinnerbone",
+	"version": "1.0.0",
+	"author": "Home: Equestria",
+	"description": "Every pony walks, trots, sits and does everything else upside down.",
+	"game_version": "0.0.3",
+	"entry": "res://mods/dinnerbone/main.gd"
+}

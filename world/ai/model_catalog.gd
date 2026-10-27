@@ -12,12 +12,18 @@ static func request_info(connection: Dictionary, cursor := "") -> Dictionary:
 	var endpoint := str(connection.get("base_url", "")).strip_edges().rstrip("/")
 	var headers := PackedStringArray(["Accept: application/json"])
 	var key := str(connection.get("api_key", "")).strip_edges()
-	if str(connection.get("provider", "openai")) == "anthropic":
+	var provider := str(connection.get("provider", "openai"))
+	if provider == "anthropic":
 		if not endpoint.ends_with("/v1"): endpoint += "/v1"
 		headers.append("x-api-key: " + key)
 		headers.append("anthropic-version: 2023-06-01")
 		endpoint += "/models?limit=100"
 		if not cursor.is_empty(): endpoint += "&after_id=" + cursor.uri_encode()
+	elif provider == "gemini":
+		if not (endpoint.ends_with("/v1beta") or endpoint.ends_with("/v1")): endpoint += "/v1beta"
+		endpoint += "/models?pageSize=1000"
+		if not cursor.is_empty(): endpoint += "&pageToken=" + cursor.uri_encode()
+		if not key.is_empty(): headers.append("x-goog-api-key: " + key)
 	else:
 		endpoint += "/models"
 		if not key.is_empty(): headers.append("Authorization: Bearer " + key)
@@ -45,12 +51,22 @@ func _received(result: int, code: int, _headers: PackedStringArray, body: Packed
 	if code != 200:
 		_finish("Model fetch returned HTTP %d. Check the address and key, or enter a model ID manually." % code); return
 	var parser := JSON.new()
-	if parser.parse(body.get_string_from_utf8()) != OK or not parser.data is Dictionary or not parser.data.get("data") is Array:
+	var gemini := str(_connection.get("provider", "")) == "gemini"
+	if parser.parse(body.get_string_from_utf8()) != OK or not parser.data is Dictionary or not parser.data.get("models" if gemini else "data") is Array:
 		_finish("The provider did not return a model list. You can enter a model ID manually."); return
 	var data: Dictionary = parser.data
-	for entry: Variant in data.data:
-		if entry is Dictionary and entry.get("id") is String and not entry.id.is_empty() and not _models.has(entry.id):
-			_models.append(entry.id)
+	for entry: Variant in data.get("models" if gemini else "data"):
+		if not entry is Dictionary: continue
+		# Gemini lists "models/<id>" with its methods; only models that can chat are offered.
+		var id: Variant = str(entry.get("name", "")).trim_prefix("models/") if gemini else entry.get("id")
+		if gemini and entry.get("supportedGenerationMethods") is Array and "generateContent" not in entry.supportedGenerationMethods: continue
+		if id is String and not id.is_empty() and not _models.has(id):
+			_models.append(id)
+	if gemini and str(data.get("nextPageToken", "")) != "":
+		var token := str(data.nextPageToken)
+		if token in _cursors or _pages >= 20:
+			_finish("Model list pagination could not finish. You can enter a model ID manually."); return
+		_cursors.append(token); _send(token); return
 	if str(_connection.get("provider", "")) == "anthropic" and data.get("has_more", false) == true:
 		var cursor: Variant = data.get("last_id", "")
 		if not cursor is String or cursor.is_empty() or cursor in _cursors or _pages >= 20:

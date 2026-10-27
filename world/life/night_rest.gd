@@ -216,7 +216,11 @@ func _step(id: String, entry: Dictionary, actor: Node3D) -> void:
 				# No sleeping on the ground outside while she has a bed: keep trying, and the
 				# moment nobody is near to watch, she is simply home in bed.
 				entry.retries += 1
+				print("[night] %s cannot reach her bed (navigator state %d, try %d)" % [id, int(nav.state), entry.retries])
 				if not _seen(actor): _tuck_in(id, entry, actor, house)
+				# Watched in her own house (player bug board #19: Fluttershy sat on the floor for
+				# hours beside an unreachable bed): after two failed walks she hops in from here.
+				elif entry.retries >= 2 and level and house.contains(here): _climb(id, entry, actor, house)
 				else: nav.go_to(side, nav.Gait.WALK); entry.until = Time.get_ticks_msec() * .001 + 60.0
 			elif not nav._has_target: nav.go_to(side, nav.Gait.WALK)
 		"asleep":

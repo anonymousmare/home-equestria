@@ -153,7 +153,7 @@ func served(order_id: Variant) -> void:
 			_eat(visit)
 			return
 
-func on_order_served(order: Dictionary, _reward: int = 20) -> void:
+func on_order_served(order: Dictionary, _reward: int = 0) -> void:
 	served(order.get("id", ""))
 
 func release_all() -> void:

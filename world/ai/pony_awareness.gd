@@ -1,6 +1,7 @@
 extends RefCounted
 ## Bounded semantic perception from game state, never from guessed mesh names.
 const LAYOUT := preload("res://world/world_layout.gd")
+const CRADLE_REST := preload("res://world/characters/locomotion/cradle_rest.gd")
 const VIEW_RANGE := 24.0
 const HEARING_RANGE := 12.0
 const MAX_PEERS := 12
@@ -141,6 +142,7 @@ func sample(id: String, observer: Node3D, characters: Dictionary, player: Node3D
 		"player_distance": INF, "player_visible": false, "player_audible": false,
 		"cover": "Indoor/outdoor status is unknown.", "events": [], "landmarks": [],
 		"asleep": observer.get("sleeping") == true,
+		"cradle": CRADLE_REST.situation(observer),
 		"riding": observer.has_meta("balloon_passenger"),
 		"aloft": observer.has_meta("balloon_passenger") and is_instance_valid(observer.get_meta("balloon_passenger")) and not bool(observer.get_meta("balloon_passenger").get("landed"))}
 	var previous: Dictionary = _observations.get(id, {})
@@ -273,6 +275,20 @@ func sample(id: String, observer: Node3D, characters: Dictionary, player: Node3D
 		sample.ground="on the house floor"
 	else:
 		sample.footing = footing(observer, position)
+	# Luna's dream (world/life/luna_dream.gd, player report 2026-10-25): the moon stands far above
+	# the world, so the town's region, weather, landmarks and "metres above the ground" footing
+	# told her Anon was not on the moon. Only a pony inside the dream's MoonDream scene gets this.
+	var dream: Node = observer.get_tree().get_first_node_in_group("luna_dream")
+	var on_moon := false
+	var up: Node = observer.get_parent()
+	while up != null and not on_moon:
+		on_moon = str(up.name) == "MoonDream"; up = up.get_parent()
+	if dream != null and dream.get("active") == true and on_moon:
+		sample.dream = true; sample.place = {}; sample.footing = ""; sample.landmarks = []
+		sample.cover = "Indoor/outdoor status is unknown."; sample.space_type = "MOON"
+		sample.ground = "on the moon's grey, cratered dust"
+		sample.sky = "the black sky of space, full of stars; no air, wind or weather here"
+		sample.erase("season")
 	var events: Array = previous.get("events", []).filter(func(event): return now - event.time < EVENT_LIFETIME)
 	if not previous.is_empty():
 		if sample.held != previous.held: events.append({"time": now, "text": "The player picked you up." if sample.held else "The player put you down."})
@@ -335,7 +351,8 @@ func footing(observer: Node3D, position: Vector3) -> String:
 func describe(sample: Dictionary, player_name: String, now: float) -> PackedStringArray:
 	var lines := PackedStringArray()
 	var place: Dictionary = sample.place
-	if place.is_empty(): lines.append("- Place: unknown.")
+	if sample.get("dream", false): lines.append("- Place: the surface of the moon, in Anon's dream. You walk in dreams and drew his sleeping mind up here; his body sleeps safely in his bed. This truly is the moon: never deny it, and do not send him to bed. He wakes when he chooses.")
+	elif place.is_empty(): lines.append("- Place: unknown.")
 	elif place.inside: lines.append("- Place: within the mapped %s region (%s)." % [place.name, place.kind])
 	else: lines.append("- Place: between mapped regions, about %.0f m from the edge of %s; not at that destination." % [place.distance, place.name])
 	# Landmarks appear once, with their bearing, in "Nearby places" below (they were listed twice).
@@ -346,13 +363,17 @@ func describe(sample: Dictionary, player_name: String, now: float) -> PackedStri
 	if sample.get("riding", false):
 		lines.append("- You are riding in Anon's hot-air balloon, in its basket with him. " + ("It is up in the air, drifting over Equestria; you step off once it lands with the gate open." if sample.get("aloft", false) else "It is resting on the ground with the gate open."))
 	if sample.get("asleep", false):
-		lines.append("- It is night and you were fast asleep, lying in bed with your eyes shut. A voice has half-woken you: you are drowsy, yawning, and would rather go back to sleep. If you decide to get up after all, use wake_up(); otherwise you stay in bed.")
+		if sample.get("cradle", "") == "asleep": lines.append(CRADLE_REST.ASLEEP_LINE)
+		else: lines.append("- It is night and you were fast asleep, lying in bed with your eyes shut. A voice has half-woken you: you are drowsy, yawning, and would rather go back to sleep. If you decide to get up after all, use wake_up(); otherwise you stay in bed.")
 	if str(sample.get("footing", "")) != "":
 		lines.append("- Where you stand: %s. This is certain: never deny it, and do not invent a ladder, stairs or any way down that is not listed here." % sample.footing)
-	var body := "being held in the player's arms right now" if sample.held else ("moving" if sample.moving else "at rest")
+	# Bridal carried (cradle_rest.gd), she knows how she is being held.
+	var cradled: bool = sample.get("cradle", "") in ["cradled", "drowsy"]
+	var body := (CRADLE_REST.BODY_WORDS if cradled else "being held in the player's arms right now") if sample.held else ("moving" if sample.moving else "at rest")
 	if str(sample.get("ground", "")) != "": body += ", " + str(sample.ground)
 	if str(sample.get("facing", "")) != "": body += ", facing " + str(sample.facing)
 	lines.append("- Your body: %s." % body)
+	if sample.get("cradle", "") == "drowsy": lines.append(CRADLE_REST.DROWSY_LINE)
 	if str(sample.get("sky", "")) != "": lines.append("- Light: %s." % sample.sky)
 	if sample.player_visible or sample.player_audible:
 		var motion := "standing still"

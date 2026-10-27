@@ -34,6 +34,19 @@ var _deadline := 0.0
 var _callback: Callable
 var _output := ""
 var _input := ""
+## Android: no program may run from app storage, so Whisper runs in-process (native/whisper_stt,
+## player board #13, dev 2026-10-26: on-device whisper for Quest). One loaded model at a time;
+## loading happens on _loader so a 150 MB model never stalls a frame.
+var _native: RefCounted
+var _native_model := ""
+var _loader: Thread
+var _native_busy := false
+
+## Tests set this to run the Android path on the desktop.
+var force_in_process := false
+
+func _in_process() -> bool:
+	return force_in_process or OS.get_name() == "Android"
 
 func _ready() -> void:
 	add_to_group("builtin_speech_services")
@@ -58,21 +71,24 @@ func _model_ready(id: String) -> bool:
 	var file := FileAccess.open(path, FileAccess.READ)
 	return file != null and file.get_length() == int(MODELS[id].size)
 
+func _busy() -> bool:
+	return _pid > 0 or _native_busy
+
 func _active_model() -> String:
 	return _model_file(model) if _model_ready(model) else ""
 
 ## Selection, actual in-flight model and download ownership are separate state.
 func model_state() -> Dictionary:
-	return {"selected": model, "active": _running_model if _pid > 0 else (model if _selected_ready else ""),
+	return {"selected": model, "active": _running_model if _busy() else (model if _selected_ready else ""),
 		"downloading": _download_model, "verifying": _verifying_model, "progress": download_progress(), "status": status}
 
 func _refresh_status(refresh_readiness := true) -> void:
 	if not available: return
 	if refresh_readiness: _selected_ready = _model_ready(model)
 	var selected := str(MODELS[model].label)
-	var active := _running_model if _pid > 0 else (model if _selected_ready else "")
+	var active := _running_model if _busy() else (model if _selected_ready else "")
 	status = "Selected: %s · Active: %s" % [selected, active.capitalize() if not active.is_empty() else "none"]
-	if _pid > 0: status += " · Transcribing"
+	if _busy(): status += " · Transcribing"
 	if _model_errors.has(model): status += " · " + str(_model_errors[model])
 	elif not _selected_ready: status += " · Selected model is preparing"
 	if not _download_model.is_empty():
@@ -139,20 +155,23 @@ func prepare() -> void:
 		status = preload("res://world/ai/ai_config.gd").builtin_unavailable(OS.get_name()); return
 	_folder = ProjectSettings.globalize_path("user://voice/" + VERSION)
 	_binary = _folder.path_join("whisper-cli.exe" if OS.get_name() == "Windows" else "whisper-cli")
+	if _in_process(): _binary = ""
 	status = "Preparing built-in speech recognition…"
 	_installer = Thread.new()
-	var error: Error = _installer.start(_install.bind(OS.get_name() == "Windows"))
+	var error: Error = _installer.start(_install.bind(OS.get_name() == "Windows", _in_process()))
 	if error != OK:
 		_installer = null; status = "Could not prepare speech recognition."
 
-func _install(windows: bool) -> String:
+## In-process (Android) installs only the model: the program is the native library.
+func _install(windows: bool, in_process := false) -> String:
 	if DirAccess.make_dir_recursive_absolute(_folder) != OK: return "Cannot create speech recognition cache."
 	var manifest: Variant = JSON.parse_string(FileAccess.get_file_as_string(ASSETS + "manifest.json"))
 	if not manifest is Dictionary: return "Speech recognition files are missing from this build."
 	var packed := "windows.zip" if windows else "linux.zip"
 	var marker := _folder.path_join("installed")
-	var signature: String = str(manifest[packed].sha256) + str(manifest["base.en.bin"].sha256)
-	if FileAccess.file_exists(marker) and FileAccess.get_file_as_string(marker) == signature and FileAccess.file_exists(_binary) and FileAccess.file_exists(_folder.path_join("base.en.bin")): return ""
+	var signature: String = ("native" if in_process else str(manifest[packed].sha256)) + str(manifest["base.en.bin"].sha256)
+	if FileAccess.file_exists(marker) and FileAccess.get_file_as_string(marker) == signature and (in_process or FileAccess.file_exists(_binary)) and FileAccess.file_exists(_folder.path_join("base.en.bin")): return ""
+	if in_process: return _install_model(manifest, marker, signature)
 	if FileAccess.get_sha256(ASSETS + packed) != str(manifest[packed].sha256): return "Speech recognition program is incomplete."
 	var zip := ZIPReader.new()
 	if zip.open(ASSETS + packed) != OK: return "Cannot open speech recognition program."
@@ -164,6 +183,9 @@ func _install(windows: bool) -> String:
 		if error != OK: zip.close(); return "Not enough space for speech recognition."
 	zip.close()
 	if not windows and FileAccess.set_unix_permissions(_binary, 493) != OK: return "Cannot make speech recognition executable."
+	return _install_model(manifest, marker, signature)
+
+func _install_model(manifest: Dictionary, marker: String, signature: String) -> String:
 	var source := FileAccess.open(ASSETS + "base.en.bin", FileAccess.READ)
 	var model := FileAccess.open(_folder.path_join("base.en.bin"), FileAccess.WRITE)
 	if source == null or model == null: return "Cannot install speech recognition model."
@@ -180,7 +202,7 @@ func _install(windows: bool) -> String:
 ## `prompt`: Whisper's initial prompt, pony and place names to spell (speech_vocabulary.gd).
 func transcribe(wav: PackedByteArray, callback: Callable, prompt := "") -> String:
 	if not available: prepare(); return status
-	if _pid > 0: return "Speech recognition is already listening to the previous recording."
+	if _busy(): return "Speech recognition is already listening to the previous recording."
 	_fetch_model(); _refresh_status()
 	var chosen := _active_model()
 	if chosen.is_empty(): return status
@@ -191,6 +213,7 @@ func transcribe(wav: PackedByteArray, callback: Callable, prompt := "") -> Strin
 	if file == null: return "Cannot save the microphone recording."
 	file.store_buffer(wav); file.close()
 	_callback = callback
+	if _in_process(): return _transcribe_in_process(chosen, wav, prompt)
 	# Bigger models need more of the CPU to answer quickly; leave two cores for the game.
 	var threads := clampi(OS.get_processor_count() - 2, 3, 8)
 	var arguments := PackedStringArray(["-m", chosen, "-f", _input, "-of", _output, "-otxt", "-l", "en", "-t", str(threads), "-np", "-nt", "-ng", "-bs", "1", "-bo", "1"])
@@ -202,6 +225,65 @@ func transcribe(wav: PackedByteArray, callback: Callable, prompt := "") -> Strin
 	_running_model = model
 	_refresh_status()
 	return ""
+
+func _transcribe_in_process(chosen: String, wav: PackedByteArray, prompt: String) -> String:
+	_cleanup()
+	if _loader != null: _callback = Callable(); return "Speech recognition is still loading its model."
+	if _native == null: _native = ClassDB.instantiate("WhisperSTT")
+	if _native_model != chosen:
+		# Load off the main thread, then start this recording.
+		_native_model = ""
+		_loader = Thread.new()
+		if _loader.start(_load_native.bind(chosen)) != OK:
+			_loader = null; _callback = Callable(); return "Could not load the speech recognition model."
+		_pending_wav = wav; _pending_prompt = prompt; _native_busy = true
+		_running_model = model; _refresh_status()
+		return ""
+	return _start_native(wav, prompt)
+
+var _pending_wav := PackedByteArray()
+var _pending_prompt := ""
+
+func _load_native(path: String) -> String:
+	return path if _native.call("load_model", path) == OK else ""
+
+## The game leaves two of the headset's cores to rendering and physics.
+func _start_native(wav: PackedByteArray, prompt: String) -> String:
+	var error: int = _native.call("start", wav, prompt, clampi(OS.get_processor_count() - 2, 2, 4))
+	if error != OK:
+		_native_busy = false; _callback = Callable(); _running_model = ""; _refresh_status()
+		return "Speech recognition could not read this recording." if error == ERR_INVALID_DATA else "Could not start built-in speech recognition."
+	_native_busy = true
+	_deadline = Time.get_ticks_msec() * .001 + 60.0
+	_running_model = model
+	_refresh_status()
+	return ""
+
+func _native_step() -> void:
+	if _loader != null:
+		if _loader.is_alive(): return
+		_native_model = str(_loader.wait_to_finish()); _loader = null
+		var wav := _pending_wav; _pending_wav = PackedByteArray()
+		if _native_model.is_empty():
+			_native_busy = false; _running_model = ""
+			_model_errors[model] = "Could not load the speech recognition model."
+			var failed := _callback; _callback = Callable(); _refresh_status()
+			if failed.is_valid(): failed.call("", "Could not load the speech recognition model.")
+			return
+		var error := _start_native(wav, _pending_prompt)
+		if not error.is_empty():
+			var failed := _callback; _callback = Callable()
+			if failed.is_valid(): failed.call("", error)
+		return
+	if not _native_busy or _native == null: return
+	var timed_out := Time.get_ticks_msec() * .001 > _deadline
+	if bool(_native.call("is_running")) and not timed_out: return
+	if timed_out: _native.call("cancel")
+	var words := str(_native.call("take_text"))
+	var error := "Speech recognition timed out." if timed_out else str(_native.call("error"))
+	_native_busy = false; _running_model = ""
+	var done := _callback; _callback = Callable(); _refresh_status()
+	if done.is_valid(): done.call(words if error.is_empty() else "", error)
 
 func _process(delta: float) -> void:
 	if _installer != null and not _installer.is_alive():
@@ -219,6 +301,7 @@ func _process(delta: float) -> void:
 		if _download_status_clock <= 0.0:
 			_download_status_clock = 0.35
 			_refresh_status(false)
+	if _in_process(): _native_step(); return
 	if _pid <= 0: return
 	if OS.is_process_running(_pid) and Time.get_ticks_msec() * .001 <= _deadline: return
 	var error := ""
@@ -236,6 +319,7 @@ func _cleanup() -> void:
 
 func cancel() -> void:
 	_callback = Callable()
+	if _native != null and _native_busy and _loader == null: _native.call("cancel"); _native_busy = false
 	if _pid > 0 and OS.is_process_running(_pid): OS.kill(_pid)
 	_pid = -1
 	_running_model = ""
@@ -243,6 +327,7 @@ func cancel() -> void:
 
 func _exit_tree() -> void:
 	cancel()
+	if _loader != null: _loader.wait_to_finish(); _loader = null
 	if _installer != null: _installer.wait_to_finish(); _installer = null
 	if _verifier != null: _verifier.wait_to_finish(); _verifier = null
 	if _download != null:

@@ -231,6 +231,8 @@ func _spawn_luna() -> void:
 	_luna = packed.instantiate()
 	_luna.name = "DreamLuna"
 	_root.add_child(_luna)
+	# The pony size setting, as every pony in the world gets it (player bug board #25).
+	if _luna.has_method("set_body_scale") and game.has_method("pony_scale_for"): _luna.set_body_scale(game.pony_scale_for(_luna))
 	_luna.global_position = _surface(Vector2(0.0, -3.2)) + Vector3.UP * 0.05
 	_luna.rotation.y = PI   # ponies face -Z; she stands at -Z of Anon, so turn her to face him
 	var nav: Node = _luna.get_node_or_null("Navigator")

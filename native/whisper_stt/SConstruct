@@ -1,0 +1,33 @@
+#!/usr/bin/env python
+# In-process whisper.cpp speech recognition (src/whisper_stt.h). Links whisper.cpp 1.8.3 static
+# libraries built per platform by build.sh (CMake) into $WHISPER_BUILD.
+import os
+
+godot_cpp = os.environ.get("GODOT_CPP", os.path.expanduser("~/tools/godot-cpp"))
+whisper_src = os.environ["WHISPER_SRC"]
+whisper_build = os.environ["WHISPER_BUILD"]
+env = SConscript(os.path.join(godot_cpp, "SConstruct"))
+env.Append(CPPPATH=["src/", os.path.join(whisper_src, "include"), os.path.join(whisper_src, "ggml/include")])
+# Shipped binaries must not carry this machine's paths (assert/__FILE__ strings from headers).
+env.Append(CCFLAGS=["-ffile-prefix-map=" + os.path.expanduser("~") + "/=~/"])
+# By file: the MinGW build names the ggml archives without the "lib" prefix.
+def archive(folder, name):
+    for candidate in ("lib" + name + ".a", name + ".a"):
+        path = os.path.join(whisper_build, folder, candidate)
+        if os.path.exists(path):
+            return File(path)
+    raise SystemExit("whisper_stt: no %s archive in %s" % (name, whisper_build))
+env.Append(LIBS=[archive("src", "whisper"), archive("ggml/src", "ggml"), archive("ggml/src", "ggml-cpu"), archive("ggml/src", "ggml-base")])
+if env["platform"] in ("linux", "android"):
+    # whisper.cpp's prompt tokenizer (std::regex) crashed inside Godot while the same call ran
+    # fine standalone (player board #13, 2026-10-26): bind the library's own C++ definitions.
+    env.Append(LINKFLAGS=["-Wl,-Bsymbolic", "-Wl,--exclude-libs,ALL"])
+if env["platform"] == "android":
+    env.Append(LIBS=["log"])
+else:
+    env.Append(LIBS=["pthread"])
+library = env.SharedLibrary(
+    "bin/libwhisper_stt{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+    source=Glob("src/*.cpp"),
+)
+Default(library)

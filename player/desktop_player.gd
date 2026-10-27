@@ -163,7 +163,8 @@ func apply_scale(s: float) -> void:
 func _set_eye_y(h: float) -> void:
 	if is_instance_valid(form_driver): return
 	if not headset_view:
-		camera.position.y = h
+		# Leaning down to a pony in his arms (interactor.gd lean_down).
+		camera.position.y = h - float(get_meta("lean_down", 0.0))
 	elif not view_hold and view_origin != null:
 		view_origin.position = Vector3(0.0, h, 0.0)
 
@@ -409,7 +410,7 @@ func _physics_process(delta: float) -> void:
 			if pony: _drive(delta, Vector2.ZERO, false, false)
 			return
 	# A deep kiss holds him where he stands (pony_kisser.gd kiss_hold); looking still works.
-	var input := Vector2.ZERO if controls_locked or has_meta("kiss_hold") else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var input := Vector2.ZERO if controls_locked or has_meta("kiss_hold") or has_meta("lay_hold") else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	if pony:
 		_pony_step(delta, input)
 		return
@@ -518,6 +519,8 @@ func _walking() -> bool:
 	if down and not _walk_key_down: _walk_key_since = now
 	elif not down and _walk_key_down and now - _walk_key_since < WALK_TAP: walk_toggled = not walk_toggled
 	_walk_key_down = down
+	# Sprinting ends a toggled walk.
+	if not controls_locked and Input.is_action_pressed("move_sprint"): walk_toggled = false
 	return walk_toggled or down
 
 

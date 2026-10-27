@@ -133,6 +133,8 @@ static func _valid_state(value:Variant,id:String)->bool:
 	if value.has("player_impressions") and not preload("res://world/ai/impressions/pony_impressions.gd").valid_save(value.player_impressions):return false
 	if value.has("player_bonds") and not preload("res://world/relationships/player_bonds.gd").valid_save(value.player_bonds):return false
 	if value.has("player_form") and not preload("res://world/life/player_form.gd").valid(value.player_form):return false
+	# Mod save sections (world/modding/mods.gd state()): one dictionary per mod id.
+	if value.has("mods") and (not value.mods is Dictionary or not value.mods.values().all(func(v:Variant)->bool:return v is Dictionary)):return false
 	for e in value.events:
 		if not e is Dictionary or not e.get("id") is String or not e.get("text") is String or e.text.length()>3000:return false
 		if not e.get("witnesses") is Array or not e.get("subjects") is Array or not e.get("kind") is String:return false

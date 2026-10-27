@@ -603,6 +603,7 @@ func load_save(path:String)->bool:
 	doc["story_source"]=path.get_basename() + ".story.db"
 	pending=doc;restoring=true
 	if is_instance_valid(host.director):host.director.interrupt()
+	get_tree().paused=false
 	var result:=get_tree().reload_current_scene()
 	if result!=OK:pending={};restoring=false;message="Could not reload the game.";changed.emit()
 	return result==OK
@@ -624,6 +625,7 @@ func load_world_save(entry:Dictionary)->bool:
 		message="Could not save this world; stayed here so you can retry.";changed.emit();return false
 	restoring=true
 	if is_instance_valid(host.director):host.director.interrupt()
+	get_tree().paused=false
 	var result:=get_tree().reload_current_scene()
 	if result!=OK:
 		pending=saved_before;requested_world=world_before
@@ -742,7 +744,8 @@ func _process(delta:float)->void:
 	if _task>=0 and WorkerThreadPool.is_task_completed(_task):
 		WorkerThreadPool.wait_for_task_completion(_task);_task=-1;busy=false;_preview_pending=null
 		message=("State could not be saved." if _invalid else (_saved_label+" saved." if _result==OK else ("Not saved: that file is from a newer version of the game." if _result==ERR_ALREADY_EXISTS else "Save failed; previous file preserved.")))+_story_error;changed.emit()
-	if not ready_to_save or not is_instance_valid(host) or not is_instance_valid(host.inventory):return
+	# Runs while the pause menu pauses the world (to finish a save); no autosaves then.
+	if get_tree().paused or not ready_to_save or not is_instance_valid(host) or not is_instance_valid(host.inventory):return
 	_timer+=delta
 	if _timer>=60.0 and not busy and not restoring:
 		_timer=0.0;save_to(directory.path_join("autosave.json"),"Autosave")

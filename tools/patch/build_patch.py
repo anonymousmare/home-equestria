@@ -3,7 +3,7 @@
 pack the player drops next to a shipped game exe (tools/build/packs.gd mounts *.pck in name
 order, later ones win). See AGENT_HANDOFF.md, "Shipping a patch".
 
-  GODOT=/path/to/Godot_v4.5-stable_linux.x86_64 BASE=3617d97 python3 tools/patch/build_patch.py
+  GODOT=/path/to/Godot_v4.5-stable_linux.x86_64 BASE=068e247 python3 tools/patch/build_patch.py
 
 Needs Godot 4.5 exactly (a 4.6 pack is refused by a 4.5 game). Output: $OUT/zz_patch.pck
 (default: build/patch/). The local dev-tools override (dev_tools_local.diff) is applied to the
@@ -14,7 +14,8 @@ sys.path.insert(0, HERE)
 import pck
 ROOT = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True, cwd=HERE).strip()
 GODOT = os.environ.get("GODOT", "godot")
-BASE = os.environ.get("BASE", "3617d97")
+# The upstream release the player runs (068e247 = 0.0.3-maredev); see AGENT_HANDOFF.md.
+BASE = os.environ.get("BASE", "068e247")
 OUT = os.environ.get("OUT", os.path.join(ROOT, "build", "patch"))
 os.makedirs(OUT, exist_ok=True)
 M = os.path.join(OUT, "mini")

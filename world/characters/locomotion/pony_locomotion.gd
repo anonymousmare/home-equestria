@@ -724,6 +724,18 @@ func throw_pony(momentum: Vector3) -> bool:
 	return thrown.launch(momentum)
 
 
+## A taser hit from `from` (world/inventory/assets/taser.gd): she tips over away from it and lies
+## twitching for `stun_seconds` (pony_throw.gd knock). False when she cannot be knocked down now.
+func tase(from: Vector3, stun_seconds: float = 4.0) -> bool:
+	if thrown == null:
+		thrown = preload("res://world/characters/locomotion/pony_throw.gd").new()
+		thrown.bind(self)
+	if thrown.active(): return false
+	var away := global_position - from; away.y = 0.0
+	away = away.normalized() if away.length() > .01 else global_basis.z
+	return thrown.knock(away * 2.2 + Vector3.UP * 1.6, stun_seconds)
+
+
 func apply_body_impulse(world_impulse: Vector3) -> void:
 	_body_offset_velocity += global_basis.orthonormalized().inverse() * world_impulse.limit_length(0.3)
 
@@ -2271,12 +2283,13 @@ static func predict_turn_transform(current: Transform3D, speed: float,
 func _update_body(delta: float) -> void:
 	if _held:
 		_body_height = move_toward(_body_height, 0.0, delta * 0.3)
-		var rotation := Basis.from_euler(Vector3(carry.pitch, carry.grip_angles.x, carry.grip_angles.y)).get_rotation_quaternion()
+		var rotation := carry.body_rotation()
 		_body_tilt = _body_tilt.slerp(rotation, 1.0 - exp(-delta / 0.08))
 		var center := carry.pivot_center
 		var carried := Transform3D(Basis(_body_tilt), center - _body_tilt * center + _body_offset + Vector3.UP * _body_height)
 		pivot.transform = carry.start_pivot.interpolate_with(carried, carry.blend)
 		_apply_body_scale()
+		if carry.cradle > 0.0: pivot.transform.basis = pivot.transform.basis.scaled_local(Vector3.ONE * carry.cradle_scale())
 		return
 	if not is_on_floor():
 		_body_height = move_toward(_body_height, 0.0, delta * 0.3)

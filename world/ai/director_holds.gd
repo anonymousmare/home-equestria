@@ -18,6 +18,12 @@ var _lull_wait:=0.0
 ## 14-19 s after another's (tester capture 2026-10-22).
 const LULL_GAP_SECONDS := 60.0
 var _lull_next_at := -1e9
+## The director's own goodbyes come one at a time: at 1 a.m. every mare in the square left in a
+## chain, one after the other, each with "Well, I'm off to ..." (dev 2026-10-26).
+const FAREWELL_GAP_SECONDS := 45.0
+## Late at night a chat still runs at least this long before bedtime ends it.
+const LATE_MIN_CHAT_SECONDS := 75.0
+var _farewell_next_at := -1e9
 
 
 func _init(owner_node: Node) -> void:
@@ -97,7 +103,7 @@ func _check_farewells(delta: float) -> void:
 	_farewell_wait = 1.0
 	for id in host._farewell.keys():
 		if host._now() > float(host._farewell[id]): _release(id)
-	if host.state != "idle" or host.group.active(): return
+	if host.state != "idle" or host.group.active() or host._now() < _farewell_next_at: return
 	var hours: float = host.get_node("/root/TimeOfDay").hours if host.has_node("/root/TimeOfDay") else 12.0
 	for id in host.characters:
 		if not engaged(id) or host._farewell.has(id) or host.quiet_moment(id) or host._encounter_claimed(id): continue
@@ -111,10 +117,14 @@ func _check_farewells(delta: float) -> void:
 			# A partner, or anypony in the same house as him: a lull ends the chat, she stays put.
 			if quiet > 90.0 or length > float(_patience[id]) * 2.0: _release(id)
 			continue
-		if hours >= 22.0 or hours < 5.0: reason = "It is late; bedtime is coming."
-		elif quiet > 50.0: reason = "The player has gone quiet for a while."
+		# Late hours halve her patience instead of ending the chat on its first reply.
+		var late := hours >= 22.0 or hours < 5.0
+		if quiet > 50.0: reason = "The player has gone quiet for a while."
+		elif late and length > maxf(LATE_MIN_CHAT_SECONDS, float(_patience[id]) * .5): reason = "It is late; bedtime is coming."
 		elif length > float(_patience[id]): reason = "You have been chatting a good while and may have other things to do today."
-		if reason != "" and request_farewell(id, reason): return
+		if reason != "" and request_farewell(id, reason):
+			_farewell_next_at = host._now() + FAREWELL_GAP_SECONDS
+			return
 
 
 func _maybe_contribute(delta:float)->void:

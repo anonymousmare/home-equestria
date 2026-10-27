@@ -658,20 +658,6 @@
     "stallion": false
   },
   {
-    "id": "juniper_montage",
-    "name": "Juniper Montage",
-    "identity": "res://world/characters/background/juniper_montage.tres",
-    "iris": [
-      0.22745098,
-      0.47058824,
-      0.73333335,
-      1.0
-    ],
-    "hex": "#3a78bb",
-    "filly": false,
-    "stallion": false
-  },
-  {
     "id": "king_sombra",
     "name": "King Sombra",
     "identity": "res://world/characters/background/king_sombra.tres",
@@ -1550,20 +1536,6 @@
       1.0
     ],
     "hex": "#d784a2",
-    "filly": false,
-    "stallion": false
-  },
-  {
-    "id": "sunset_shimmer",
-    "name": "Sunset Shimmer",
-    "identity": "res://world/characters/background/sunset_shimmer.tres",
-    "iris": [
-      0.49803922,
-      0.9529412,
-      0.8117647,
-      1.0
-    ],
-    "hex": "#7ff3cf",
     "filly": false,
     "stallion": false
   },

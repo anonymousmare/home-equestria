@@ -4,7 +4,7 @@ extends RefCounted
 ## clear discards the tray and a burnt patty, preserving a cooking/ready patty.
 ## start retries the same seed; quit resets to idle. No currency or save integration.
 ## Set external_customers before starting to admit only actual arrived ponies.
-## earned_bits is a local tally. reward_sink(20) must succeed before a serve commits;
+## earned_bits is a local tally. reward_sink(REWARD_BITS) must succeed before a serve commits;
 ## served_order is informational only and must never pay the wallet a second time.
 ## tips is a local service/score bonus, never an additional currency reward.
 
@@ -16,7 +16,9 @@ const MAX_ADVANCE_SECONDS: float = 60.0 # Bound catch-up after a suspend; never 
 const COOK_SECONDS: float = 5.0
 const BURN_SECONDS: float = 17.0 # Total time on grill; twelve seconds to collect.
 const QUEUE_LIMIT: int = 3
-const REWARD_BITS: int = 20
+## A small tip per burger served; the shift wage is the real pay (player bug board #17: 20 bits
+## for a 10-bit burger on top of the wage made no sense).
+const REWARD_BITS: int = 3
 const CUSTOMER_NAMES: Array[String] = [
 	"Derpy", "Applejack", "Pinkie Pie", "Rainbow Dash", "Rarity", "Fluttershy",
 	"Lyra", "Bon Bon", "Minuette", "Twilight Sparkle",
@@ -62,7 +64,7 @@ func start_shift(seed_value: int = 0) -> void:
 	_shift_number += 1
 	_state = "playing"
 	if external_customers:
-		_notify("started", "Counter open! Waiting for a pony to arrive. Each correct hayburger earns 20 bits.")
+		_notify("started", "Counter open! Waiting for a pony to arrive. Each correct hayburger earns a %d-bit tip." % REWARD_BITS)
 	else:
 		_add_automatic_order()
 		_next_arrival = _arrival_delay()
@@ -268,7 +270,7 @@ func _serve() -> bool:
 	_tray.clear()
 	if _orders.is_empty() and not external_customers:
 		_next_arrival = minf(_next_arrival, _elapsed + 3.0)
-	_notice("served", "%s loved it! 20 bits earned." % order["name"])
+	_notice("served", "%s loved it! %d-bit tip." % [order["name"], REWARD_BITS])
 	served_order.emit(completed_order, REWARD_BITS)
 	changed.emit()
 	return true

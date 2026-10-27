@@ -8,6 +8,11 @@ const REGISTRY := preload("res://world/painting/painting_registry.gd")
 const SHUTDOWN := preload("res://world/shutdown_waits.gd")
 const FRAME := "res://world/painting/models/art_frame.glb"
 const SIZE := Vector3(0.58, 0.891, 0.03)
+## A photo (painting_registry.gd KIND_PHOTO) is a small print: a 4:3 picture on white card.
+const PRINT_PICTURE := Vector2(0.14, 0.105)
+const PRINT_BORDER := 0.008
+const PRINT_THICKNESS := 0.002
+var photo := false
 static var _icons: Dictionary = {}
 var bounds := AABB(Vector3(-SIZE.x * 0.5, -SIZE.y * 0.5, 0.0), SIZE)
 var art_id := ""
@@ -19,13 +24,18 @@ func configure_body(item: RigidBody3D, shape: CollisionShape3D) -> void:
 	art_id = REGISTRY.art_id(str(item.get_meta("item_id", "")))
 	var row := REGISTRY.art(art_id)
 	orient = str(row.get("orient", "P"))
+	photo = REGISTRY.is_photo(art_id)
 	var size := SIZE if orient == "P" else Vector3(SIZE.y, SIZE.x, SIZE.z)
+	if photo: size = Vector3(PRINT_PICTURE.x + PRINT_BORDER * 2.0, PRINT_PICTURE.y + PRINT_BORDER * 2.0, PRINT_THICKNESS)
 	bounds = AABB(Vector3(-size.x * 0.5, -size.y * 0.5, 0.0), size)
 	var box := BoxShape3D.new(); box.size = size
 	shape.shape = box; shape.position = bounds.get_center()
 	var label := str(row.get("label", ""))
 	set_meta("ai_id", "painting:" + art_id)
 	set_meta("ai_label", "a painting by Anon (%s)" % label if not label.is_empty() else "a painting by Anon")
+	if photo:
+		set_meta("ai_id", "photo:" + art_id)
+		set_meta("ai_label", "a photo Anon took")
 	_build()
 
 func _ready() -> void:
@@ -37,6 +47,8 @@ func _ready() -> void:
 
 func _build() -> void:
 	if get_child_count() > 0: return
+	if photo:
+		_build_print(); return
 	var scene := load(FRAME) as PackedScene
 	if scene == null: return
 	var frame: Node3D = scene.instantiate()
@@ -46,6 +58,22 @@ func _build() -> void:
 	for mesh: GeometryInstance3D in frame.find_children("*", "GeometryInstance3D", true, false):
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_face = frame.find_child("ArtFace", true, false) as MeshInstance3D
+
+## The print: white card, the picture on its front (+Z), origin at the card's back centre.
+func _build_print() -> void:
+	var card := MeshInstance3D.new(); card.name = "Card"
+	var box := BoxMesh.new()
+	box.size = Vector3(PRINT_PICTURE.x + PRINT_BORDER * 2.0, PRINT_PICTURE.y + PRINT_BORDER * 2.0, PRINT_THICKNESS)
+	card.mesh = box; card.position.z = PRINT_THICKNESS * 0.5
+	var white := StandardMaterial3D.new(); white.albedo_color = Color(0.96, 0.95, 0.92); white.roughness = 0.6
+	card.material_override = white
+	card.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(card)
+	_face = MeshInstance3D.new(); _face.name = "ArtFace"
+	var quad := QuadMesh.new(); quad.size = PRINT_PICTURE
+	_face.mesh = quad; _face.position.z = PRINT_THICKNESS + 0.0004
+	_face.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_face)
 
 ## True when the picture is on the face (false: bare canvas for now).
 func _show() -> bool:
@@ -61,12 +89,12 @@ func _show() -> bool:
 		material.emission = REGISTRY.CANVAS_COLOR
 		_face.material_override = material
 		return false
-	if orient == "L": image.rotate_90(CLOCKWISE)
+	if orient == "L" and not photo: image.rotate_90(CLOCKWISE)
 	image.generate_mipmaps()
 	material.albedo_texture = ImageTexture.create_from_image(image)
 	material.emission = Color.WHITE
 	material.emission_texture = material.albedo_texture
-	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS if photo else BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	_face.material_override = material
 	return true
 

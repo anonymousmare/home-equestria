@@ -17,6 +17,7 @@ const SPEECH := preload("res://world/ai/speech_input.gd")
 const INDICATOR := preload("res://world/ai/pony_speech_indicator.gd")
 const HUD := preload("res://world/ai/voice_hud.gd")
 const LLM := preload("res://world/ai/llm_client.gd")
+const VISION := preload("res://world/ai/photo_vision.gd")
 const TTS := preload("res://world/ai/tts_client.gd")
 const AWARENESS := preload("res://world/ai/pony_awareness.gd")
 const FACE_TAGS := preload("res://world/ai/pony_dialogue_tags.gd")
@@ -121,6 +122,8 @@ var _notes_turn := -1
 const FALLBACK_LINES := ["Hm? Sorry, I lost my train of thought there.", "Sorry, what was that? My head was somewhere else.",
 	"Oh! Um, give me a second, I got distracted.", "Hmm... sorry, say that again?"]
 var _summary_llm: Node
+## The separate photo-describing model (photo_vision.gd "separate"), made on first use.
+var _vision_llm: Node
 var _summary_wait := 5.0
 var _pending_contacts: Dictionary = {}
 var _contact_log: Dictionary = {}
@@ -177,6 +180,7 @@ func _ready() -> void:
 	# Test runs (EQ_CONTEXT_ROOT / headless) keep their status beside their own context.
 	llm.status_path = budget_root.path_join("llm_status.json") if not budget_root.is_empty() else LLM.STATUS_PATH
 	add_child(llm)
+	llm.warm_up()
 	llm.usage_reported.connect(_on_llm_usage)
 	_summary_llm = LLM.new()
 	_summary_llm.name = "SummaryLlm"
@@ -234,6 +238,7 @@ func reload_config() -> String:
 	for id in characters:
 		characters[id].prompt = CONFIG.prompt_text(String(characters[id].profile.get("prompt", "")))
 	llm.configure(_llm_section()); llm.debug = debug
+	llm.warm_up()
 	if is_instance_valid(feedback_input): feedback_input.reload_config()
 	_configure_summary_llm()
 	tts.configure(config.section("tts")); tts.debug = debug
@@ -314,6 +319,9 @@ func request_farewell(id: String, reason: String) -> bool:
 	return _holds.request_farewell(id, reason)
 
 var _farewell_reason := ""
+## The latest goodbye spoken aloud: the next mare's farewell prompt quotes it so she words hers
+## differently (dev 2026-10-26: every mare left "with the same sentence structure").
+var _last_farewell := {"id": "", "text": "", "at": -1e9}
 func _release(id: String) -> void:
 	_holds._release(id)
 
@@ -568,12 +576,46 @@ func handle_text(text: String) -> void:
 	_record_heard("player", id, text, audience)
 	# The player's words always win: drop whatever background request (ambient chatter, a
 	# greeting, a slow reply) still holds the one LLM connection, instead of "llm busy".
-	if llm.busy: llm.cancel()
+	if not await _take_llm(): return
 	_trace_request("player_reply", _current, prompt, history)
 	_label_next("dialogue_player")
-	var started: bool = llm.complete_limited(prompt, history.duplicate(), _on_reply.bind(_turn_id), {"extra_output": 160}) if brain_turn else llm.complete(prompt, history.duplicate(), _on_reply.bind(_turn_id))
-	if not started:
+	var limits := {"extra_output": 160} if brain_turn else {}
+	# A photo in the player's hand, when Photos vision is on (photo_vision.gd).
+	var vision := VISION.mode(config)
+	var photo := "" if vision == "off" else VISION.held_photo(get_tree())
+	if not photo.is_empty() and vision == "separate" and _describe_photo(photo, prompt, history.duplicate(), limits, _turn_id): return
+	var messages := history.duplicate()
+	if not photo.is_empty() and vision == "same":
+		var jpeg := VISION.encode(photo)
+		if not jpeg.is_empty():
+			limits.image_jpeg = jpeg
+			messages = VISION.with_note(messages, VISION.SHOWN_NOTE)
+	if not llm.complete_limited(prompt, messages, _on_reply.bind(_turn_id), limits):
 		_fail("llm busy")
+
+## Separate vision model: it describes the photo first, then the pony's own model answers with the
+## description in the player's line. A failed description still answers, without the photo.
+func _describe_photo(photo: String, prompt: String, messages: Array, limits: Dictionary, turn: int) -> bool:
+	var jpeg := VISION.encode(photo)
+	var section: Dictionary = config.section("vision").duplicate()
+	if jpeg.is_empty() or str(section.get("base_url", "")).is_empty() or str(section.get("model", "")).is_empty(): return false
+	if _vision_llm == null:
+		_vision_llm = LLM.new(); _vision_llm.name = "VisionLlm"
+		_vision_llm.status_path = llm.status_path
+		add_child(_vision_llm)
+	section.provider = "openai"; section.max_tokens = 220
+	_vision_llm.configure(section)
+	if _vision_llm.busy: _vision_llm.cancel()
+	var answer := func(text: String, error: String) -> void:
+		if turn != _turn_id or state != "thinking": return
+		var shown := messages
+		if error.is_empty() and not text.strip_edges().is_empty():
+			shown = VISION.with_note(messages, VISION.DESCRIBED_NOTE % text.strip_edges().left(600))
+		else:
+			push_warning("photo description failed: " + error)
+		if not llm.complete_limited(prompt, shown, _on_reply.bind(turn), limits): _fail("llm busy")
+	return _vision_llm.complete_limited(VISION.DESCRIBE_SYSTEM, [{"role": "user", "content": VISION.DESCRIBE_ASK}], answer,
+		{"image_jpeg": jpeg, "output_tokens": 220, "purpose": "vision"})
 
 ## Drops the oldest messages in chunks (LLM.HISTORY_STEP beyond the limit) instead of one per turn,
 ## so the transcript's first message, and with it a provider's cached prefix, holds for several turns.
@@ -710,6 +752,8 @@ func _on_reply(text: String, error: String, turn_id := -1) -> void:
 		return
 	if not decoded.get("dropped", []).is_empty():
 		print("[ai] %s: dropped unusable tags %s" % [_current, ", ".join(decoded.dropped)])
+	# Feeling tags never reach the speech lines above; log them so a player log shows what the model sent.
+	print("[ai] %s feelings: %s" % [_current, JSON.stringify(decoded.get("impression", {})) if not decoded.get("impression", {}).is_empty() else "none"])
 	var mismatch := INTENT.missing(_player_text, decoded.speech, decoded.actions)
 	if not mismatch.is_empty():
 		if _repair_response(text, mismatch, false): return
@@ -837,6 +881,9 @@ func _on_speech_started(id: String) -> void:
 	# Always logged: which turn and voice clip each spoken line belongs to, so a line heard twice
 	# shows whether it was two replies or one clip played twice (dev 2026-09-25).
 	print("[ai] says %s turn %d voice %d: %s" % [id, _turn_id, _voice_id, spoken.left(90)])
+	if _farewell.has(id):
+		var same: bool = str(_last_farewell.id) == id and _now() - float(_last_farewell.at) < 20.0
+		_last_farewell = {"id": id, "text": ((str(_last_farewell.text) + " ") if same else "") + spoken, "at": _now()}
 	if group.active():
 		if _listener_id != "player": _set_attention(_listener_id, entry.node)
 		_prefetch_next()
@@ -1096,7 +1143,7 @@ func _fail(why: String) -> void:
 	state = "idle" # stop_speaking may synchronously emit speech_finished.
 	_turn_id += 1
 	_voice_id += 1
-	if is_instance_valid(llm) and llm.has_method("cancel"):llm.cancel()
+	_release_llm()
 	if is_instance_valid(tts) and tts.has_method("cancel"):tts.cancel()
 	_clear_dialogue_face(_current)
 	_pending_face = ""
@@ -1269,6 +1316,27 @@ func _on_talk_pressed() -> void:
 	_speech_input._on_talk_pressed()
 
 
+## The reply in flight belongs to a turn that is over. A cloud request is hung up; a local server
+## keeps working on a request the game hangs up on (llm_client.gd LOCAL_TIMEOUT), so there it runs
+## out and its stale reply is ignored by turn instead.
+func _release_llm() -> void:
+	if is_instance_valid(llm) and llm.has_method("cancel") and not llm.is_local(): llm.cancel()
+
+
+## This turn takes the one LLM connection. A local server would only queue the new request behind
+## the one it is still working on, so this waits for that instead of hanging up on it. False when
+## another turn started meanwhile.
+func _take_llm() -> bool:
+	if not llm.busy: return true
+	if not llm.is_local():
+		llm.cancel()
+		return true
+	var turn := _turn_id
+	print("[ai] waiting for the local model to finish an earlier request")
+	await llm.idle
+	return turn == _turn_id
+
+
 ## Interrupt before recording PTT, or when a typed utterance replaces a pending turn.
 func interrupt() -> void:
 	if is_instance_valid(feedback_input): feedback_input.cancel()
@@ -1283,7 +1351,7 @@ func interrupt() -> void:
 	_transcribing_feedback = false
 	_turn_id += 1
 	_voice_id += 1
-	if is_instance_valid(llm) and llm.has_method("cancel"): llm.cancel()
+	_release_llm()
 	if is_instance_valid(tts) and tts.has_method("cancel"): tts.cancel()
 	if is_instance_valid(_stt): _stt.cancel_request()
 	if is_instance_valid(_builtin_stt): _builtin_stt.cancel()

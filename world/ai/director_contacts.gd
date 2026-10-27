@@ -13,6 +13,7 @@ const CONTACT_COOLDOWN := 8.0
 const CONTACT_STALE := 20.0
 const CHEM := preload("res://world/chemistry/chem_catalog.gd")
 const BELONGINGS := preload("res://world/chemistry/pony_belongings.gd")
+const CRADLE_REST := preload("res://world/characters/locomotion/cradle_rest.gd")
 
 var host: Node
 var _remembered_contacts:Dictionary={}
@@ -29,6 +30,7 @@ func _remember_touch(kind:String,id:String)->void:
 	if host._now()-float(_remembered_contacts.get(key,-100.))<10.:return
 	_remembered_contacts[key]=host._now()
 	var what:=kind if not kind.begins_with("petted:") else "petting your "+_pet_words(kind.get_slice(":",1))
+	if kind=="tased":what="he shot you with a taser; you fell and lay twitching for a few seconds"
 	host.world_context.record("physical_contact","The player made contact with you: "+what+". This alone does not establish how you felt about it.",[id],["player",id])
 
 
@@ -42,7 +44,7 @@ func _remember_outcome(event:Dictionary,id:String)->void:
 
 
 func reaction_chance(kind:String) -> float:
-	if kind in ["carried", "carried_away", "sprayed", "thrown"] or kind.begins_with("anon_resting") or _chemistry(kind): return 1.0
+	if kind in ["carried", "carried_away", "sprayed", "thrown", "tased"] or kind.begins_with("anon_resting") or _chemistry(kind): return 1.0
 	if kind.begins_with("petted"):return .3
 	match kind:
 		"flank_smack", "kiss_refused": return 1.0
@@ -123,7 +125,7 @@ func _on_physical_reaction(kind:String,id:String,deferred:bool=false,summary:=""
 	if not is_instance_valid(host.player_head) or not is_instance_valid(host.characters[id].node):return
 	if not host.awareness.can_hear(host.characters[id].node,host.player_head,host._earshot(id)):return
 	if host.state!="idle" or host.speech.state=="hearing":
-		if (kind in ["carried", "carried_away", "sprayed", "thrown"] or kind.begins_with("anon_resting") or _chemistry(kind)) and not deferred:
+		if (kind in ["carried", "carried_away", "sprayed", "thrown", "tased"] or kind.begins_with("anon_resting") or _chemistry(kind)) and not deferred:
 			host._pending_contacts[id] = {"kind": kind, "until": host._now() + 12.0}
 		return
 	if kind not in ["farewell","contact"] and host._reaction_rng.randf()>=reaction_chance(kind):return
@@ -139,14 +141,24 @@ func _on_physical_reaction(kind:String,id:String,deferred:bool=false,summary:=""
 	var event:=summary
 	if kind == "carried": event = "Anon has been holding you off the ground in his hands for over five seconds. You may simply enjoy being held in silence. If words add something, one or two can be enough. Do not invent where he intends to take you."
 	if kind == "carried_away": event = "Anon picked you up and is moving away from where he lifted you, carrying you in his hands. You may enjoy the ride silently; speak only if something needs saying. You do not yet know his destination or intent."
-	if kind == "thrown": event = "Anon just threw you from his hands. React briefly in your own voice to being tossed; surprise, protest or amusement should fit your character and relationship. Do not invent injuries or claim you have landed somewhere unless your current situation confirms it."
+	if kind.begins_with("carried") and CRADLE_REST.cradled(host.characters[id].node): event = CRADLE_REST.CARRIED_EVENT if kind == "carried" else CRADLE_REST.CARRIED_AWAY_EVENT
+	if kind == "thrown": event = _thrown_event(id)
 	# Cuddling is her choice (dev 2026-09-28): the bed or couch only tells her he is lying there.
 	if kind.begins_with("anon_resting"): event = "Anon is lying down on the %s a few steps from you, resting. If you would like to cuddle with him, say so and use [cuddle]. It is just as fine to leave him be, or only say something." % kind.get_slice(":", 1)
+	# The taser (world/inventory/assets/taser.gd): she was down for a few seconds, cartoon-style. How she
+	# takes it is her personality's call, not a fixed penalty (dev 2026-10-26: "i assume pinkie pie or
+	# rainbow may give less of a shit"); her feeling tags carry any change in how she sees him.
+	if kind == "tased": event = "Anon just shot you with a taser. Your whole body locked up, you toppled over and lay twitching on the ground for a few seconds; you are getting back up now, unhurt. React briefly in your own voice, however your character and your relationship with him would really take it: laughing it off, a dare to do it again, revenge plans, protest, fear or hurt feelings are all possible."
 	if kind == "sprayed": event = "Anon just sprayed you with plain water from a small spray bottle. Your coat is damp where it hit. React briefly in character to the water."
 	# The chemistry set (world/chemistry): drinks, bottles to keep, things going bang.
 	if kind.begins_with("potion") or kind.begins_with("kept:") or kind.begins_with("kaboom:"): event = _chemistry_event(kind, id)
 	if kind=="quiet":event="The player has been quiet since your last reply. Sometimes just relish the moment with them: comfortable silence is a complete answer, so reply with only [silence], above all if you already asked a question. Speak only with a reason: a few natural words, then wait; never continue a monologue, restart your last topic or invent a project from the scenery. You may bring up something new instead. " + preload("res://world/ai/chatter_topics.gd").seed_line()
-	if kind=="farewell":event="The conversation has run its course: "+host._farewell_reason+" Decide for yourself what you do next. Usually you say a short, natural goodbye in your own words, like \"Okay, I gotta go, bye!\", optionally where you are off to, and go about your day (go_to, go_home or resume_routine). If it fits your character and the moment to stay near the player instead, say so and stay. Speak; do not reply with only [silence]."
+	if kind=="farewell":
+		event="The conversation has run its course: "+host._farewell_reason+" Decide for yourself what you do next. Usually you say a short goodbye in your own words and voice, then go about your day (go_to, go_home or resume_routine). You need not say where you are going or why. If it fits your character and the moment to stay near the player instead, say so and stay. Speak; do not reply with only [silence]."
+		# Another mare's goodbye moments ago: hers must not sound the same (dev 2026-10-26).
+		var last: Dictionary = host._last_farewell
+		if str(last.id) != id and host._now() - float(last.at) < 180.0 and not str(last.text).is_empty():
+			event += " %s just said goodbye with: \"%s\". Word yours completely differently: different opening, length and structure, and not the same plan or place." % [str(host.characters[last.id].profile.get("name", last.id)) if host.characters.has(last.id) else "Another pony", str(last.text).left(160)]
 	var runtime: Node = host.get_tree().get_first_node_in_group("encounters")
 	if runtime != null and kind != "farewell" and kind != "quiet": runtime.event(id, kind, event.left(160) if not event.is_empty() else kind.replace("_", " "))
 	var messages:Array=host.characters[id].history.duplicate(true)
@@ -154,7 +166,7 @@ func _on_physical_reaction(kind:String,id:String,deferred:bool=false,summary:=""
 	var instruction:=" LESS IS MORE: one or two words, or only [silence], are often enough; longer chatter only when the moment invites it, not after every touch. Do not repeat this instruction."
 	messages.append({"role":"user","content":host._physical_context+instruction})
 	# Contact and handling are the player's doing too: they take the connection.
-	if host.llm.busy: host.llm.cancel()
+	if not await host._take_llm(): return
 	var contact_prompt: String = host.system_prompt(id)
 	host._trace_request("contact:" + kind, id, contact_prompt, messages)
 	host._label_next("lull" if kind == "quiet" else "farewell" if kind == "farewell" else "contact_" + kind.get_slice(":", 0))
@@ -237,3 +249,21 @@ func _contact_summary(id:String,entry:Dictionary) -> String:
 	else:
 		text+=" Nobody is asking whether you are upset; there is no need to say you are not."
 	return text
+
+
+## Every model answered a throw with "I'm a pony, not a sack of oats!" (dev 2026-10-26). Each throw
+## now names one way to react, drawn at random, rules out that phrasing, and says how often he has
+## thrown her lately so a third toss lands differently from the first.
+const THROWN_ANGLES := ["a wordless yelp or gasp, nothing more", "laughing, maybe asking to go again",
+	"scolding him by name", "flustered or embarrassed rather than angry", "a dry, deadpan remark",
+	"checking her mane or coat is not ruined", "asking him what that was for", "playing it cool, as if nothing happened",
+	"only [silence] and a look", "a short threat of payback, in fun or not"]
+
+func _thrown_event(id: String) -> String:
+	var entry: Dictionary = host.characters.get(id, {})
+	var recent: Array = entry.get("thrown_at", []).filter(func(t): return host._now() - float(t) < 300.0)
+	recent.append(host._now())
+	if not entry.is_empty(): entry["thrown_at"] = recent
+	var angle: String = THROWN_ANGLES[host._reaction_rng.randi_range(0, THROWN_ANGLES.size() - 1)]
+	var times := "" if recent.size() < 2 else " He has now thrown you %d times in the last few minutes." % recent.size()
+	return "Anon just threw you from his hands. React briefly in your own voice to being tossed; surprise, protest or amusement should fit your character and relationship. Do not invent injuries or claim you have landed somewhere unless your current situation confirms it." + times + " This time react as: " + angle + ", if it fits your character. Never say you are a pony, dragon or anything else that is \"not a\" sack, beanbag, ball, toy or other object; do not compare yourself to an object at all."

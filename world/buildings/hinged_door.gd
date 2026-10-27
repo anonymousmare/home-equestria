@@ -31,6 +31,12 @@ var _close_delay:=0.0:
 	set(value):
 		if value!=_close_delay:_close_delay=value;_wake()
 static var _panel_replacements:Dictionary={}
+## Arched doors hung on the outer wall face swung their tall middle through the arch's soffit and
+## the room-side trim (player bug board #12, 2026-10-26). These move the hinge inward to the room
+## side of the trim, in the house's own units (x12 in town): measured in front of the leaf's upper
+## hinge half, plus 2.4 cm. Rectangular doors (houses B, C, D, F, Sugarcube) swing clear as they are.
+const ARCH_INSETS:={"house_a:FrontDoor":.0207,"house_d:FrontDoor":.0513,"house_e:FrontDoor":.0389,"house_g:FrontDoor":.0349,
+	"house_h:FrontDoor":.0378,"house_h:BalconyDoor":.0359}
 const OUTLINE:=preload("res://world/ui/interact_outline.gd")
 const SFX := preload("res://world/audio/interaction_sounds.gd")
 const OPEN_SOUND := "prop_door_open"
@@ -174,6 +180,10 @@ func _update_visitors(delta:float) -> void:
 		target=0.0
 		if opening_angle()<.001:_close_after_passage=false
 func _ready() -> void:
+	# Once only: offline builders run this too and may pack the moved door.
+	var inset_key:=(owner.scene_file_path.get_file().get_basename() if owner!=null else "")+":"+str(name)
+	if ARCH_INSETS.has(inset_key) and not has_meta("arch_inset"):
+		position+=transform.basis*Vector3(0,0,-float(ARCH_INSETS[inset_key]));set_meta("arch_inset",true)
 	# Offline-cleaned panels preserve the artwork without overlapping triangles.
 	if _panel_replacements.is_empty():
 		_panel_replacements=JSON.parse_string(FileAccess.get_file_as_string("res://world/buildings/door_panels/replacements.json"))

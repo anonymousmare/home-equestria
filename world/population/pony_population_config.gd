@@ -12,7 +12,7 @@ const SIX := {
 const PRINCESSES := {
 	"celestia": "res://world/characters/princesses/celestia.tscn",
 	"luna": "res://world/characters/princesses/luna.tscn"}
-const RETIRED := ["hitch_trailblazer", "aunt_holiday", "auntie_lofty", "bright_mac", "pear_butter", "sandbar"]
+const RETIRED := ["hitch_trailblazer", "aunt_holiday", "auntie_lofty", "bright_mac", "pear_butter", "sandbar", "sunset_shimmer", "juniper_montage"]
 const FIRST_STALLIONS := ["big_mcintosh", "shining_armor", "braeburn"]
 const STALLION_ROSTER_VERSION := 2
 const STALLIONS := {

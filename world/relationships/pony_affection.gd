@@ -144,7 +144,13 @@ func _young_player() -> bool:
 ## True while her face may be right against his (a kiss or its release easing out); the eye guard
 ## then leaves her head to the kiss IK (pony_head_guard.gd).
 func kissing_face() -> bool:
-	return kind=="kiss" or (is_instance_valid(pose) and pose.kiss_face())
+	return kind=="kiss" or (is_instance_valid(pose) and pose.kiss_face()) or _bridal_reach()
+
+## Bridal carried and reaching up to kiss him (pony_carry.gd kiss_reach): her face is meant to come
+## to his, so the eye guard treats it as a kiss face.
+func _bridal_reach() -> bool:
+	var carry: Object = mare.get("carry") if is_instance_valid(mare) else null
+	return carry != null and carry.get("kiss_reach") != null and float(carry.get("kiss_reach")) > 0.0
 
 func _claim() -> void:
 	if _claimed_nav:return

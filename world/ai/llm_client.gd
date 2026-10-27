@@ -16,6 +16,12 @@ const MAX_ATTEMPTS := 4
 const RETRY_BASE_SECONDS := 1.0
 const RETRY_MAX_DELAY := 8.0
 const MAX_TOTAL_SECONDS := 120.0
+## A server on this machine or the home network (dev 2026-10-26, a tester's intercept): it loads its
+## model on the first request (30 s or more) and keeps working on a request the game hangs up on, so
+## re-sending after a timeout only queued copies behind it until every try failed. There the wait is
+## at least this long (unless the player set their own Timeout), a timeout is not re-sent, and
+## warm_up() loads the model at start.
+const LOCAL_TIMEOUT := 300.0
 ## Last requests and failures for the Context page (world/ui/ai_context_page.gd). Numbers and
 ## failure kinds only: never prompts, replies, headers or keys.
 const STATUS_PATH := "user://ai/llm_status.json"
@@ -46,6 +52,8 @@ const SPEECH_REASONING_ROOM := 1024
 
 ## Token counts the provider reported for each finished request (accounting, never content).
 signal usage_reported(usage: Dictionary)
+## No request in flight any more (answered, failed or cancelled).
+signal idle
 
 @export var provider := "openai"
 @export var base_url := "http://127.0.0.1:8787/v1"
@@ -129,8 +137,50 @@ func configure(section: Dictionary) -> void:
 	generation_overrides = preload("res://world/ai/llm_options.gd").selected(section)
 	max_tokens = int(generation_overrides.get("max_tokens", max_tokens))
 	timeout = float(generation_overrides.get("timeout", timeout))
+	local_server = section.get("local_server", null)
+	if is_local() and not generation_overrides.has("timeout"): timeout = maxf(timeout, LOCAL_TIMEOUT)
 	if _request != null:
 		_request.timeout = timeout
+
+
+## Settings "llm.local_server" true/false overrides the guess (local_url).
+var local_server: Variant = null
+
+
+func is_local() -> bool:
+	return bool(local_server) if local_server is bool else local_url(base_url)
+
+
+## The default ports of local model servers: Ollama, LM Studio, llama.cpp/LocalAI/llama-swap, vLLM,
+## text-generation-webui, KoboldCpp, Jan. A local address on another port is usually a proxy to a
+## cloud model (the Claude CLI proxy, Gemini proxies), which loads nothing and bills every request.
+const LOCAL_PORTS := [11434, 1234, 8080, 8000, 5000, 5001, 1337]
+
+## A model server on this machine or the home network (loopback, 10/8, 172.16/12, 192.168/16,
+## .local) on a local model server's port.
+static func local_url(url: String) -> bool:
+	var authority := url.get_slice("://", 1).get_slice("/", 0).to_lower()
+	var host := authority.get_slice("]", 0).trim_prefix("[") if authority.begins_with("[") else authority.get_slice(":", 0)
+	var port_text := authority.get_slice("]", 1).trim_prefix(":") if authority.begins_with("[") else authority.get_slice(":", 1)
+	if port_text.is_empty() or not port_text.to_int() in LOCAL_PORTS: return false
+	if host in ["localhost", "::1", "0.0.0.0"] or host.ends_with(".local"): return true
+	if host.begins_with("127.") or host.begins_with("10.") or host.begins_with("192.168."): return true
+	var second := host.get_slice(".", 1).to_int() if host.begins_with("172.") else 0
+	return second >= 16 and second <= 31
+
+
+## One tiny request at start so a local server has its model loaded before anypony needs it.
+func warm_up() -> void:
+	if busy or not is_local(): return
+	print("[llm] warming up the local model %s" % model)
+	purpose = "warm_up"
+	complete_limited("Reply with one word.", [{"role": "user", "content": "Hi"}], func(_reply: String, error: String) -> void:
+		print("[llm] local model %s" % ("ready" if error.is_empty() else "warm-up: " + error)), {"max_attempts": 1})
+
+
+## This request's whole time window: at least the old 120 s, else room for one full Timeout.
+func _window() -> float:
+	return maxf(MAX_TOTAL_SECONDS, timeout + RETRY_MAX_DELAY + 10.0)
 
 
 ## Request body and headers for the configured provider (also used by the tests).
@@ -200,6 +250,31 @@ func build_request(system: String, messages: Array, limits: Dictionary = {}) -> 
 		if cache_blocks > 0: anthropic_system = cached_parts(blocks, cache_blocks)
 		body = {"model": model, "max_tokens": generation_budget,
 			"system": anthropic_system, "messages": cached_history(messages, live_mode, mini(cache_blocks, MAX_BREAKPOINTS))}
+	elif provider == "gemini":
+		# Native generateContent (base URL https://generativelanguage.googleapis.com). Gemini caches a
+		# repeated prefix implicitly: the stable system text and history need no markers.
+		var endpoint := base_url if base_url.ends_with("/v1beta") or base_url.ends_with("/v1") else base_url + "/v1beta"
+		var model_id := model.trim_prefix("models/")
+		url = endpoint + "/models/" + model_id.uri_encode() + ":generateContent"
+		if api_key != "": headers.append("x-goog-api-key: " + api_key)
+		var contents: Array = []
+		for message: Variant in messages:
+			if message is Dictionary: contents.append(gemini_content(message))
+		if not str(limits.get("image_jpeg", "")).is_empty() and not contents.is_empty():
+			contents[-1].parts.push_front({"inlineData": {"mimeType": "image/jpeg", "data": str(limits.image_jpeg)}})
+		var config := {"maxOutputTokens": generation_budget}
+		# As on the OpenAI-compatible route below: thinking models count their thoughts inside the
+		# output cap, so conversation asks for little thinking and keeps room for the spoken line.
+		var version := model_id.to_lower().get_slice("-", 1).to_float() if model_id.to_lower().begins_with("gemini-") else 0.0
+		if version >= 3.0: config.thinkingConfig = {"thinkingLevel": "low"}
+		elif version >= 2.5: config.thinkingConfig = {"thinkingBudget": 1024}
+		if version >= 2.5 and not limits.has("output_tokens"):
+			config.maxOutputTokens = maxi(output_budget, 16384 if limits.get("output_recovery", false) else 8192)
+		if limits.has("output_tokens") and int(limits.get("reasoning_room", 0)) > 0:
+			config.maxOutputTokens = output_budget + int(limits.reasoning_room)
+		for key: String in GEMINI_OPTIONS:
+			if generation_overrides.has(key): config[GEMINI_OPTIONS[key]] = generation_overrides[key]
+		body = {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents, "generationConfig": config}
 	else:
 		url = base_url + "/chat/completions"
 		if api_key != "":
@@ -229,9 +304,42 @@ func build_request(system: String, messages: Array, limits: Dictionary = {}) -> 
 		# Other OpenAI-compatible servers may reject the unknown field, so it goes to OpenRouter only.
 		if not openrouter_provider.is_empty() and preload("res://world/ai/ai_config.gd").is_openrouter(base_url):
 			body.provider = {"order": [openrouter_provider], "allow_fallbacks": openrouter_fallbacks}
-	for key: String in generation_overrides:
-		if key not in ["max_tokens", "timeout"]: body[key] = generation_overrides[key]
+	# Gemini's sampling options were mapped into generationConfig above.
+	if provider != "gemini":
+		for key: String in generation_overrides:
+			if key not in ["max_tokens", "timeout"]: body[key] = generation_overrides[key]
+	# A photo the player shows (world/ai/photo_vision.gd, opt-in): the picture rides on the last
+	# user message only, in each protocol's own image format.
+	if not str(limits.get("image_jpeg", "")).is_empty() and provider != "gemini":
+		attach_image(body.messages, str(limits.image_jpeg), provider == "anthropic")
 	return {"url": url, "headers": headers, "body": JSON.stringify(body)}
+
+## Player sampling overrides (llm_options.gd) under their generationConfig names; Gemini has no min_p.
+const GEMINI_OPTIONS := {"temperature": "temperature", "top_p": "topP", "top_k": "topK", "seed": "seed",
+	"frequency_penalty": "frequencyPenalty", "presence_penalty": "presencePenalty"}
+
+## One message as Gemini content: role "model" for her lines, its text parts in order. The API
+## rejects an empty text part.
+static func gemini_content(message: Dictionary) -> Dictionary:
+	var parts: Array = []
+	var content: Variant = message.get("content", "")
+	for part: Variant in (content if content is Array else [{"text": str(content)}]):
+		if part is Dictionary and part.get("text") is String and not str(part.text).strip_edges().is_empty():
+			parts.append({"text": str(part.text)})
+	if parts.is_empty(): parts.append({"text": "..."})
+	return {"role": "model" if str(message.get("role", "")) == "assistant" else "user", "parts": parts}
+
+static func attach_image(messages: Array, jpeg_base64: String, anthropic: bool) -> void:
+	if messages.is_empty(): return
+	var last: Dictionary = (messages[-1] as Dictionary).duplicate()
+	var parts: Array = []
+	var content: Variant = last.get("content", "")
+	if content is Array: parts = (content as Array).duplicate()
+	else: parts = [{"type": "text", "text": str(content)}]
+	if anthropic: parts.push_front({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": jpeg_base64}})
+	else: parts.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + jpeg_base64}})
+	last.content = parts
+	messages[-1] = last
 
 
 ## Text parts for the stable system blocks; the first `cached` blocks end with a cache breakpoint
@@ -335,7 +443,7 @@ func _reset_accounting() -> void:
 func _send() -> void:
 	_capture("request", {"body": str(_last_request.get("body", ""))})
 	if _request != null:
-		var left := MAX_TOTAL_SECONDS - (float(clock.call()) - _started_at)
+		var left := _window() - (float(clock.call()) - _started_at)
 		_request.timeout = clampf(left, 5.0, maxf(timeout, 5.0))
 	var err := _dispatch_request(_last_request)
 	if err != OK:
@@ -362,11 +470,13 @@ func _dispatch_request(req: Dictionary) -> Error:
 
 
 func cancel() -> void:
+	var was_busy := busy
 	if busy: _capture("cancel", {"seconds": snappedf(float(clock.call()) - _started_at, 0.1)})
 	_callback_generation += 1
 	if _request != null: _request.cancel_request()
 	busy = false
 	_on_done = Callable()
+	if was_busy: idle.emit()
 
 
 func _on_completed(result: int, code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
@@ -375,6 +485,9 @@ func _on_completed(result: int, code: int, headers: PackedStringArray, body: Pac
 	_capture("response", {"result": result, "http_status": code, "body": text})
 	var verdict := classify(result, code, headers, text)
 	if verdict.kind == "retry":
+		if result == HTTPRequest.RESULT_TIMEOUT and is_local():
+			_finish("", "the local server did not answer within %d s (still loading or working); raise Timeout in AI Settings" % int(timeout), "transient")
+			return
 		if not _schedule_retry(verdict): _finish("", str(verdict.error), "transient")
 		return
 	if verdict.kind == "refusal":
@@ -414,6 +527,7 @@ func _finish(reply: String, error: String, outcome: String) -> void:
 	last_outcome = outcome
 	_record_status(outcome, error)
 	if done.is_valid(): done.call(reply, error)
+	if not busy: idle.emit()
 
 
 ## Another attempt after exponential backoff with jitter (or the server's Retry-After), only
@@ -421,7 +535,7 @@ func _finish(reply: String, error: String, outcome: String) -> void:
 func _schedule_retry(verdict: Dictionary) -> bool:
 	if _attempt >= _max_attempts or _last_request.is_empty() or not is_inside_tree(): return false
 	var delay := retry_delay(_attempt, float(verdict.get("retry_after", -1.0)), randf())
-	if float(clock.call()) - _started_at + delay + 10.0 > MAX_TOTAL_SECONDS: return false
+	if float(clock.call()) - _started_at + delay + 10.0 > _window(): return false
 	_attempt += 1
 	push_warning("[ai] llm: %s; retry %d of %d in %.1f s" % [str(verdict.error).left(120), _attempt - 1, _max_attempts - 1, delay])
 	var generation := _callback_generation
@@ -453,7 +567,8 @@ static func classify(result: int, code: int, headers: PackedStringArray, text: S
 	var parser := JSON.new()
 	if parser.parse(text) != OK or not parser.data is Dictionary:
 		return {"kind": "retry", "error": "malformed reply: " + text.left(120)}
-	if finish_reason(parser.data) in ["refusal", "content_filter"]:
+	# Gemini: a blocked candidate's finishReason, or "blocked" when the prompt itself was refused.
+	if finish_reason(parser.data) in ["refusal", "content_filter", "safety", "prohibited_content", "blocklist", "spii", "image_safety", "blocked"]:
 		return {"kind": "refusal", "error": REFUSAL_ERROR, "parsed": parser.data}
 	return {"kind": "ok", "parsed": parser.data}
 
@@ -530,6 +645,7 @@ func _labelled(usage: Dictionary) -> Dictionary:
 
 ## Numeric accounting only: never log prompts, account details, headers or credentials.
 static func usage_counts(parsed: Variant) -> Dictionary:
+	if parsed is Dictionary and parsed.get("usageMetadata") is Dictionary: return gemini_usage(parsed.usageMetadata)
 	if not parsed is Dictionary or not parsed.get("usage") is Dictionary: return {}
 	var usage: Dictionary = parsed.usage
 	var result := {}
@@ -548,15 +664,27 @@ static func usage_counts(parsed: Variant) -> Dictionary:
 		result["reasoning_tokens"] = maxi(0, int(completion.reasoning_tokens))
 	return result
 
+## Gemini usageMetadata in the OpenAI names. Its candidate count leaves out thoughts, which the
+## OpenAI shape counts inside completion_tokens, so they are added back.
+static func gemini_usage(usage: Dictionary) -> Dictionary:
+	var result := {}
+	for pair: Array in [["promptTokenCount", "prompt_tokens"], ["totalTokenCount", "total_tokens"], ["thoughtsTokenCount", "reasoning_tokens"], ["cachedContentTokenCount", "cached_tokens"], ["candidatesTokenCount", "completion_tokens"]]:
+		if usage.get(pair[0]) is int or usage.get(pair[0]) is float: result[pair[1]] = maxi(0, int(usage[pair[0]]))
+	if result.has("reasoning_tokens"): result.completion_tokens = int(result.get("completion_tokens", 0)) + int(result.reasoning_tokens)
+	return result
+
 ## Providers expose truncation separately from their text; never count a cut draft as complete.
 static func finish_reason(parsed: Variant) -> String:
 	if not parsed is Dictionary: return ""
 	if parsed.get("choices") is Array and not parsed.choices.is_empty() and parsed.choices[0] is Dictionary:
 		return str(parsed.choices[0].get("finish_reason", "")).to_lower()
+	if parsed.get("candidates") is Array and not parsed.candidates.is_empty() and parsed.candidates[0] is Dictionary:
+		return str(parsed.candidates[0].get("finishReason", "")).to_lower()
+	if parsed.get("promptFeedback") is Dictionary and not str(parsed.promptFeedback.get("blockReason", "")).is_empty(): return "blocked"
 	return str(parsed.get("stop_reason", "")).to_lower()
 
 
-## The assistant text out of either provider's JSON.
+## The assistant text out of any provider's JSON.
 static func extract_text(parsed: Variant) -> String:
 	if not (parsed is Dictionary):
 		return ""
@@ -579,6 +707,14 @@ static func extract_text(parsed: Variant) -> String:
 			if block is Dictionary and block.get("type", "") == "text" and block.get("text") is String:
 				parts.append(str(block.text))
 		return " ".join(parts).strip_edges()
+	if d.get("candidates") is Array and not d.candidates.is_empty() and d.candidates[0] is Dictionary:
+		var candidate: Variant = d.candidates[0].get("content", {})
+		if not candidate is Dictionary or not candidate.get("parts") is Array: return ""
+		var parts: PackedStringArray = []
+		for part: Variant in candidate.parts:
+			# Thought summaries are private reasoning, not her reply.
+			if part is Dictionary and part.get("text") is String and part.get("thought", false) != true: parts.append(str(part.text))
+		return "".join(parts).strip_edges()
 	return ""
 
 

@@ -138,7 +138,7 @@ func _begin_group(ids: Array[String], ambient := false) -> void:
 	host._group_request = ""
 	# A group the player addressed takes the connection; ponies chatting among themselves
 	# simply skip this moment when it is taken (no error on screen).
-	if not host.group.ambient and host.llm.busy: host.llm.cancel()
+	if not host.group.ambient and not await host._take_llm(): return
 	if not _complete_group(host._group_prompt(), [{"role":"user", "content":request}], host._on_group_reply.bind(host._turn_id)):
 		if host.group.ambient: host._finish_silence()
 		else: host._fail("llm busy")

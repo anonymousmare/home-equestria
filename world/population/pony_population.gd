@@ -218,6 +218,7 @@ func _assign_houses() -> void:
 			if occupants[place] < occupants[best]: best = place
 		houses[id] = best; occupants[best] += 1; changed = true
 	# Keep the first family member's existing address; bring family into that house.
+	var freed := []
 	for family: Array in CONFIG.HOUSEHOLDS.FAMILIES:
 		var home := ""
 		for id: String in family:
@@ -225,12 +226,27 @@ func _assign_houses() -> void:
 		if home.is_empty(): continue
 		for id: String in family:
 			if id in ids and houses.get(id, "") != home:
+				if houses.has(id): freed.append(houses[id])
 				houses[id] = home; changed = true
 	# Joining families frees some of the earlier individual houses. Use those for
 	# fillies with no assigned guardian, rather than leaving them with a random family.
 	for place in occupants: occupants[place] = 0
 	for id in ids:
 		if occupants.has(houses.get(id, "")): occupants[houses[id]] += 1
+	# A pony who is not family but was filled into a family's house moves to a free one
+	# (dev 2026-10-25: Aloe shared Vinyl's house; once Octavia moved in with Vinyl, Aloe takes
+	# Octavia's old house).
+	var family_homes := {}
+	for family: Array in CONFIG.HOUSEHOLDS.FAMILIES:
+		for id: String in family:
+			if id in ids and houses.has(id): family_homes[houses[id]] = true
+	for id in ids:
+		if CONFIG.HOUSEHOLDS.members(id).size() > 1 or not family_homes.has(houses.get(id, "")): continue
+		for place: String in freed + places:
+			if int(occupants.get(place, -1)) != 0: continue
+			if occupants.has(houses[id]): occupants[houses[id]] -= 1
+			houses[id] = place; occupants[place] += 1; changed = true
+			break
 	for id: String in CONFIG.FILLIES:
 		if not id in ids or CONFIG.HOUSEHOLDS.members(id).size() > 1 or not houses.has(id): continue
 		var old: String = houses[id]

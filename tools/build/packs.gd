@@ -39,6 +39,12 @@ static func android_directories(user_data: String, external_roots: PackedStringA
 		if obb not in dirs: dirs.append(obb)
 	return dirs
 
+## The game's own packs beside the executable: HomeEquestria.pck, -data, -raw (or a renamed exe's).
+## Any other pack there is a mod (world/modding/mod_loader.gd).
+static func is_game_pack(name: String) -> bool:
+	var exe := OS.get_executable_path().get_file().get_basename()
+	return name.begins_with("HomeEquestria") or (not exe.is_empty() and name.begins_with(exe))
+
 static func load_extra_packs() -> PackedStringArray:
 	var loaded := PackedStringArray()
 	if not OS.has_feature("template"): return loaded
@@ -47,10 +53,12 @@ static func load_extra_packs() -> PackedStringArray:
 	var dirs: Array[String] = [exe.get_base_dir()]
 	if OS.has_feature("android"):
 		dirs = android_directories(OS.get_user_data_dir())
-	return _load_from_directories(dirs, main_pack)
+	# Other packs beside a desktop executable are mods: world/modding/mod_loader.gd mounts them
+	# after these, honouring Settings → Mods.
+	return _load_from_directories(dirs, main_pack, ProjectSettings.load_resource_pack, not OS.has_feature("android"))
 
 static func _load_from_directories(dirs: Array[String], main_pack: String,
-		mount: Callable = ProjectSettings.load_resource_pack) -> PackedStringArray:
+		mount: Callable = ProjectSettings.load_resource_pack, game_only := false) -> PackedStringArray:
 	var loaded := PackedStringArray()
 	var seen := {}
 	for dir in dirs:
@@ -59,6 +67,7 @@ static func _load_from_directories(dirs: Array[String], main_pack: String,
 		names.sort()
 		for name in names:
 			if name.get_extension().to_lower() not in ["pck", "obb"] or seen.has(name): continue
+			if game_only and not is_game_pack(name): continue
 			var path := dir.path_join(name)
 			if path == main_pack: continue
 			if bool(mount.call(path, true)):

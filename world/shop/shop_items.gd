@@ -27,6 +27,8 @@ const GOODS := {
 	"potted-plant": ["Potted plant", 0.55, 20, "Set this plant on a floor or table in your home."],
 	# The folding painting easel (world/painting/, 2026-10-22; the price is a proposal for dev).
 	"easel": ["Folding easel", 1.55, 60, "Unfold it on flat ground to paint. Brush, pencil, scraper and paints come with it."],
+	# The photo camera (world/items/photo_camera.gd, dev 2026-10-25; the price is a proposal for dev).
+	"camera": ["Photo camera", 0.145, 80, "Hold the eyepiece to your eye to frame a shot (right click on desktop). Trigger or click takes the photo, and it prints."],
 }
 ## Reuse installed authored models; their in-hand size is also their placed size.
 const GOODS_MODELS := {
@@ -34,6 +36,7 @@ const GOODS_MODELS := {
 	"picture": "res://world/buildings/cloudominium/models/room_pack/rd_picture.scn",
 	"potted-plant": "res://world/props/rnl/rnl_plantpot/prefab.scn",
 	"easel": "res://world/painting/models/easel_folded.glb",
+	"camera": "res://world/inventory/assets/camera/camera.glb",
 }
 ## Clothing profile values: part -> [colour index, pattern index, scale index]
 ## (world/customization/clothing_profile.gd PALETTES/PATTERNS/SCALES).

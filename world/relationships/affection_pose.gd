@@ -84,6 +84,9 @@ var _anim: Dictionary = {}
 ## No joint range is changed. On the ground she bows a little at the withers
 ## to bring her head down under his mouth (always inside the spine's joint limits).
 const CHEST_MAX := deg_to_rad(12.0)
+## Bridal carried (pony_carry.gd cradle), her body stays in his arms: her chest curls up only this
+## far to help her neck reach him.
+const CRADLE_CHEST_MAX := deg_to_rad(25.0)
 ## Share of the remaining head turn each bone takes, neck1 -> neck2 -> head: the turn spreads
 ## along the neck (about 20/30/50 %) instead of all at the skull.
 const SPREAD: Array[float] = [.2, .375, 1.0]
@@ -256,7 +259,11 @@ func _process_modification_with_delta(_delta: float) -> void:
 		for leg in _hind: leg.plant = Vector3.INF; leg.step = -1.0
 	if amount>.001 and head>=0 and target.is_finite():
 		_applied = amount
-		if kiss_now:
+		if _cradled():
+			# Bridal carried, pony_carry.gd's kiss reach poses her head, neck and chest instead: this
+			# pose would straighten her head to him and fold her pinned forelegs up into her face.
+			_fading = false; _goal = Vector3.INF
+		elif kiss_now:
 			_fading = true
 			_kiss(sk, _delta, true)
 		elif _fading and _goal.is_finite() and _last_eye.is_finite(): _kiss(sk, _delta, false)
@@ -520,11 +527,16 @@ func _carry(sk: Skeleton3D, goal: Vector3, aim: Quaternion, passes: int) -> void
 				var anim: Quaternion = _anim.get(bone, sk.get_bone_pose_rotation(bone))
 				var now := sk.get_bone_pose_rotation(bone)
 				var bent := anim.angle_to(now)
-				var cap := CHEST_MAX*low_share if bone==low_spine else (PI if mare.is_held() else CHEST_MAX)
+				var cap := CHEST_MAX*low_share if bone==low_spine else ((CRADLE_CHEST_MAX if _cradled() else PI) if mare.is_held() else CHEST_MAX)
 				if bent>cap: sk.set_bone_pose_rotation(bone, anim.slerp(now, cap/bent))
 				_aim_along(sk, aim, [_neck1, _neck2, head], [.34, .5, 1.0])
 			elif bone==_neck1: _aim_along(sk, aim, [_neck2, head], [.5, 1.0])
 			else: _hold_head(sk, aim)
+
+## She is bridal carried (pony_carry.gd cradle_goal).
+func _cradled() -> bool:
+	var carry: Object = mare.get("carry")
+	return carry != null and carry.get("cradle_goal") == true
 
 ## The head turns to `aim` (skeleton space), as far as its own joint limit allows.
 func _hold_head(sk: Skeleton3D, aim: Quaternion) -> void:

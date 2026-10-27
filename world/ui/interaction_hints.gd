@@ -336,6 +336,7 @@ func _held_hint() -> Dictionary:
 	var use := ""
 	# AnonPony wears no clothes (briefcase_inventory.gd held_usable): for her an outfit is only carried.
 	if id == "spray-bottle": use = "Spray"
+	elif id == "taser": use = "Fire taser"
 	elif (item as Node).get_node_or_null("BookItem") != null: use = "Read"
 	elif SHOP_ITEMS.kind(id) in ["outfit", "equipment"] and not PLAYER_FORM.is_pony(PLAYER_FORM.active(get_tree())): use = "Put on / take off" if id == "equipment:wing-sandals" else "Wear"
 	elif inventory.has_method("held_usable") and inventory.held_usable(item):

@@ -8,6 +8,9 @@ const CELL := 48.0
 ## Visible distance per kind family (small 45 m, medium 90 m, tall 160 m; perf pass 2026-10-13).
 const SMALL := ["grass_tuft_a", "grass_tuft_b", "daisy_clump", "lupin_clump", "stepping_stones_b"]
 const TALL := ["cypress", "tiered_fir", "broadleaf_tree", "bush_cluster_large", "well", "hay_cart"]
+## Solid kinds whose drawn mesh is wider than the planned radius suggests. The cypress column
+## measures 1.22 m from its trunk (player bug board #9, 2026-10-26: walking 0.7 m into it).
+const MEASURED_RADIUS := {"cypress": 1.0}
 const RANGE_SMALL := 45.0
 const RANGE_MEDIUM := 90.0
 const RANGE_TALL := 160.0
@@ -131,6 +134,7 @@ func _collider(body: StaticBody3D, row: Dictionary, kind: String) -> void:
 	else:
 		var cylinder := CylinderShape3D.new()
 		cylinder.radius = maxf(0.1, float(row.radius) * 0.75 * (0.7 if kind.begins_with("bush_") else 1.0))  # leaf bushes are built at 0.7
+		if MEASURED_RADIUS.has(kind): cylinder.radius = float(MEASURED_RADIUS[kind])
 		cylinder.height = 1.2 if kind not in TALL else 3.0
 		shape.shape = cylinder
 		shape.transform = place * Transform3D(Basis.IDENTITY, Vector3(0, cylinder.height * 0.5, 0))

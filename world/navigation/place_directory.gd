@@ -6,7 +6,7 @@ const HOUSE_KIND := "house"
 const TOWN_BUILDINGS := {"town_hall": "Ponyville Town Hall", "sugarcube_corner": "Sugarcube Corner"}
 ## The river bridges. Their scenery label is the shared word "bridge", which the build step
 ## leaves out of ai_observable, so they are listed here by node name (tools/rnl_scenery/plan.py).
-const BRIDGES := {"bridge_01": "South bridge", "bridge_02": "Market road bridge", "bridge_03": "East bridge"}
+const BRIDGES := {"bridge_01": "South bridge", "bridge_02": "Market road bridge", "bridge_03": "East bridge", "bridge_04": "Cottage bridge"}
 const MARKET_STALL := "Town/Market/kiosk_01_02"
 static var _cache: Array = []
 static var _stamp := -INF

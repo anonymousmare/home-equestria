@@ -7,6 +7,10 @@ const OWNER := preload("res://player/desktop_action_owner.gd")
 const TOUCH_REACH := 1.6
 const CONTACT_SECONDS := .16
 const STROKE_SECONDS := .7
+## Where his palms rest relative to her chest's side grips while carrying (negative = inside them).
+const CARRY_PALM := -.03
+## Bridal carry: how far below her spine and thighs his palms rest.
+const CRADLE_UNDER := .1
 var camera: Camera3D
 var body: Node3D
 var inventory: Node
@@ -23,6 +27,11 @@ var _hoof_anchor := Vector3.ZERO
 var _slap_until := 0
 var _avatar: Node
 var _held_pose := false
+## Bridal carried, the controls move to a card in the corner (cradle_controls.gd); the row under
+## the crosshair sat where her subtitles go.
+var _cradle_controls: CanvasLayer
+var _cradle_rows_in := 0.0
+var _cradle_rows: Array = []
 
 
 func setup(view: Camera3D, movement: Node3D, items: Node, reach: Node) -> void:
@@ -46,12 +55,47 @@ func _present(kind: String, point: Vector3, normal: Vector3) -> bool:
 	if not is_instance_valid(_avatar): return false
 	if kind in ["carry", "hoof_hold"]:
 		var facing := camera.global_basis.orthonormalized()
-		_avatar.set_hold_target("right", Transform3D(facing, point), "hold")
-		if kind == "carry": _avatar.set_hold_target("left", Transform3D(facing, point-camera.global_basis.x*.18), "hold")
+		var right := point
+		if kind == "carry":
+			# A hand at her chest grip sinks into her chest whichever way she faces: hold her sides.
+			var across := camera.global_basis.x * (_carry_half_width() + CARRY_PALM)
+			right = point + across
+			var left := point - across
+			# Bridal carry: his left hand behind her upper back and neck, his right under her hind
+			# legs, mid-gaskin (the hocks ride too high for his reach).
+			var cradled := smoothstep(0.0, 1.0, interactor.cradle_amount())
+			if cradled > 0.0:
+				var pony: Node3D = interactor.held
+				var size := float(pony.get("body_scale") if pony.get("body_scale") != null else 1.0)
+				var pivot: Node3D = pony.get("pivot")
+				var back: Vector3 = (pony.global_basis * pivot.transform.basis).orthonormalized() * Vector3.UP if pivot != null else Vector3.DOWN
+				left = left.lerp(_bone_point(pony, ["pony_spine1", "pony_neck1"]) + back * CRADLE_UNDER * size, cradled)
+				right = right.lerp(_bone_point(pony, ["pony_tibia_L", "pony_tibia_R", "pony_legLower_L", "pony_legLower_R"]) + Vector3.DOWN * CRADLE_UNDER * .6 * size, cradled)
+			_avatar.set_hold_target("left", Transform3D(facing, left), "hold")
+		_avatar.set_hold_target("right", Transform3D(facing, right), "hold")
 		_held_pose = true
 		return true
 	if kind == "pet" and _avatar.update_action_target(kind, point, normal): return true
 	return _avatar.request_action(kind, point, normal)
+
+
+## The average world position of these bones of hers (her grip point if none are found).
+func _bone_point(pony: Node3D, names: Array) -> Vector3:
+	var skeleton: Skeleton3D = pony.get("skeleton")
+	var sum := Vector3.ZERO
+	var found := 0
+	for bone_name: String in names:
+		var bone := skeleton.find_bone(bone_name) if skeleton != null else -1
+		if bone < 0: continue
+		sum += skeleton.global_transform * skeleton.get_bone_global_pose(bone).origin
+		found += 1
+	return sum / found if found > 0 else pony.get_grip_transform("chest").origin
+
+
+## Half her chest's width, from her own side grips, so it fits foals and grown ponies alike.
+func _carry_half_width() -> float:
+	var pony: Node3D = interactor.held
+	return pony.get_grip_transform("left_chest").origin.distance_to(pony.get_grip_transform("right_chest").origin) * .5
 
 
 func busy() -> bool:
@@ -149,8 +193,15 @@ func _unclaim() -> void:
 
 
 func cancel_desktop_activity() -> void:
+	if _keeps_cradle(): return
 	_finish()
 	if is_instance_valid(interactor) and is_instance_valid(interactor.held): interactor._drop()
+
+
+## Bridal carried, she stays in his arms through chat, menus and alt-tab: only he puts her down
+## (G, or carrying her normally first). Knocked down, flying or in pony form still lets go.
+func _keeps_cradle() -> bool:
+	return is_instance_valid(interactor) and is_instance_valid(interactor.held) and interactor.cradled 		and is_instance_valid(camera) and is_instance_valid(body) and not body.get_meta("knocked_down", false) 		and body.get("flying") != true and _human()
 
 
 func _begin(action: String, offer: Dictionary) -> bool:
@@ -207,7 +258,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_update_cradle_controls(delta)
 	if not _available():
+		if _keeps_cradle():
+			_present("carry", interactor.held.get_grip_transform("chest").origin, -camera.global_basis.z)
+			return
 		_finish()
 		if is_instance_valid(interactor) and is_instance_valid(interactor.held): interactor._drop()
 		return
@@ -286,9 +341,14 @@ func presentation() -> Dictionary:
 
 func interaction_hint() -> Dictionary:
 	if not _available(): return {}
+	if is_instance_valid(interactor) and is_instance_valid(interactor.held) and interactor.cradled: return {}
 	if is_instance_valid(interactor) and is_instance_valid(interactor.held):
+		# "Tap"/"key" keep a bare B from reading as the VR B button icon.
+		var key: String = Settings.key_label("carry_turn", "B")
+		var turn := "Hold %s key · Carry normally" % key if interactor.cradled else "Tap %s · Turn around   Hold %s key · Bridal carry" % [key, key]
+		if not interactor.cradled and interactor._cradle_carry() == null: turn = "Tap %s · Turn around" % key
 		return {"target": interactor.held, "point": interactor.held.global_position,
-			"text": "Tap G · Put down   Hold G, let go · Throw   %s · Turn around   Hold K · Kiss" % Settings.key_label("carry_turn", "B"), "outline": null, "visible_pick": true}
+			"text": "Tap G · Put down   Hold G, let go · Throw   %s   Hold K · Kiss" % turn, "outline": null, "visible_pick": true}
 	if _action == "hoof_hold":
 		return {"target": _target, "point": _point, "text": "E · Release hoof", "outline": null, "visible_pick": true}
 	if not _social_free(): return {}
@@ -298,11 +358,29 @@ func interaction_hint() -> Dictionary:
 	var hoof: RefCounted = offer.target.get("hoof_hold")
 	if hoof != null and not hoof.candidate(offer.point, .12).is_empty(): text += "   E · Hold hoof"
 	if not _select(true).is_empty(): text += "   Right click · Smack"
-	text += "   G · Carry"
+	text += "   G · Carry   Hold G · Bridal carry"
 	var undress: Node = get_tree().get_first_node_in_group("pony_undress")
 	if undress != null: text += undress.hint_suffix(offer.target)
 	offer.text = text; offer.outline = null
 	return offer
+
+
+func _update_cradle_controls(delta: float) -> void:
+	var on: bool = _available() and is_instance_valid(interactor) and is_instance_valid(interactor.held) and interactor.cradled
+	if not on and not is_instance_valid(_cradle_controls): return
+	if not is_instance_valid(_cradle_controls):
+		_cradle_controls = preload("res://player/cradle_controls.gd").new()
+		add_child(_cradle_controls)
+	# Which rows apply changes with what is in front of him; checked a few times a second.
+	_cradle_rows_in -= delta
+	if on and _cradle_rows_in <= 0.0:
+		_cradle_rows_in = .2
+		var rest: Node = interactor.held.get_node_or_null("CradleRest")
+		var bed: bool = rest != null and not rest.bed_spot(camera.global_position, -camera.global_basis.z).is_empty()
+		_cradle_rows = [["G", "tap", "Lay in bed" if bed else "Put down"], ["G", "hold", "Throw"],
+			["K", "hold", "Kiss"], [Settings.key_label("carry_turn", "B"), "hold", "Carry normally"]]
+		if interactor.door_past_held() != null: _cradle_rows.insert(0, ["E", "", "Open door"])
+	_cradle_controls.update(on, _cradle_rows, delta)
 
 
 ## While a boop comes in, her eyes follow his fingertip to her nose (dev 2026-10-14). Her own
@@ -342,4 +420,5 @@ func _notification(what: int) -> void:
 
 
 func _exit_tree() -> void:
-	cancel_desktop_activity()
+	_finish()
+	if is_instance_valid(interactor) and is_instance_valid(interactor.held): interactor._drop()

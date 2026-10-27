@@ -277,8 +277,18 @@ func _update_hand_step(side: String, sample: Dictionary, _delta: float):
 				host._pressed[side + "_easel"] = true
 				if load(host.EASEL_FOLD).unfold(host, side): host._pressed[side] = grip; return
 			host._pressed[side + "_easel"] = easel_pull
+		if item.get_meta("item_id", "") == "goods:camera":
+			var photo_camera: Node3D = host.PHOTO_CAMERA.on(item)
+			photo_camera.vr_tick(host.camera)
+			var shutter: bool = float(sample.trigger) > .7
+			if shutter and not host._pressed.get(side + "_shutter", false): photo_camera.snap(host, null)
+			host._pressed[side + "_shutter"] = shutter
 		if item.get_meta("item_id", "") == "spray-bottle" and float(sample.trigger) > .7:
 			item.get_node("SprayBottle").spray()
+		if item.get_meta("item_id", "") == "taser":
+			var pull: bool = float(sample.trigger) > .7
+			if pull and not host._pressed.get(side + "_taser", false): item.get_node("Taser").fire()
+			host._pressed[side + "_taser"] = pull
 		if CATALOG.is_book(String(item.get_meta("item_id",""))):
 			_book_hand(side,item,sample,pose)
 		var mouth_near:bool=FOOD.mouth_near(item,host._mouth()) if FOOD.has(str(item.get_meta("item_id",""))) else item.global_position.distance_to(host._mouth())<.1
