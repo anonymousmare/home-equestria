@@ -64,6 +64,7 @@ const KEYBOARD_CALLOUTS := [
 	["Companion pace", [KEY_CAPSLOCK], "left"],
 	["Sprint", ["move_sprint"], "left"],
 	["Clothes", [KEY_U], "right"],
+	["Take off her scarf, hat...", [KEY_O], "right"],
 	["Briefcase", [KEY_I], "right"],
 	["Fly (wings, sandals)", [KEY_F], "right"],
 	["Pick up · put down · throw", [KEY_G], "right"],

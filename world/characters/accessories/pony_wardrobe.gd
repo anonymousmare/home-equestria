@@ -13,6 +13,9 @@ extends Node
 ## rare sourced hats (and socks for some), autumn scarves, summer cowpony hats for a few; each pony
 ## makes the same choices. Gifts from Anon (world/relationships/hand_feeding.gd hands them over)
 ## are worn whatever the season, and are saved in the world ("pony_gifts").
+## Anon can take pieces off her again on desktop (world/relationships/pony_undress.gd, O): a gift
+## goes back into his briefcase, her own seasonal or show piece stays off for the rest of the season
+## ("pony_taken_off").
 const KINDS := ["scarf", "beanie", "sunhat", "socks", "wizard_hat", "cape", "spa-necklace", "bowtie", "necktie", "cowpony-hat", "detective-hat", "nurse-cap", "cat-eye-glasses", "aviators", "goggles", "headphones"]
 const WORN_NAMES := {"scarf":"a scarf", "beanie":"a detective hat", "sunhat":"a cowpony hat",
 	"socks":"striped thigh-high socks", "wizard_hat":"a wizard hat", "cape":"a cape", "spa-necklace":"a spa pendant necklace", "bowtie":"a bow tie", "necktie":"a necktie", "cowpony-hat":"a cowpony hat", "detective-hat":"a detective hat", "nurse-cap":"a nurse cap", "cat-eye-glasses":"cat-eye glasses", "aviators":"aviator glasses", "goggles":"flight goggles", "headphones":"headphones"}
@@ -55,6 +58,47 @@ func gifts() -> Dictionary:
 	var state: Dictionary = game.world_context.state
 	if not state.get("pony_gifts") is Dictionary: state["pony_gifts"] = {}
 	return state.pony_gifts
+
+## {pony id: {kind: season}}: her own pieces Anon took off; she leaves them off until the season turns.
+func taken_off() -> Dictionary:
+	var state: Dictionary = game.world_context.state
+	if not state.get("pony_taken_off") is Dictionary: state["pony_taken_off"] = {}
+	return state.pony_taken_off
+
+## What Anon can take off her now, newest first: [kind, gift item id, or "" for her own piece].
+func removable(pony: Node3D) -> Array:
+	var identity: Resource = pony.get("identity")
+	var worn: Dictionary = pony.get_meta("wardrobe", {})
+	if identity == null or worn.is_empty(): return []
+	var result := []
+	var gift_list: Array = gifts().get(str(identity.id), [])
+	for i in range(gift_list.size() - 1, -1, -1):
+		var parts := str(gift_list[i]).split(":")
+		if parts.size() == 3 and worn.has(parts[1]) and int(worn[parts[1]]) == int(parts[2]) and not _listed(result, parts[1]):
+			result.append([parts[1], str(gift_list[i])])
+	for kind: String in worn:
+		if not _listed(result, kind) and not pony.find_children("Wear_" + kind + "*", "", true, false).is_empty(): result.append([kind, ""])
+	return result
+
+static func _listed(rows: Array, kind: String) -> bool:
+	for row: Array in rows:
+		if row[0] == kind: return true
+	return false
+
+## Takes `kind` off her now. A gift leaves her gift list (the caller puts it in the briefcase first);
+## her own piece is remembered as taken off for this season.
+func take_off(pony: Node3D, kind: String, gift: String) -> void:
+	var id := str(pony.get("identity").id)
+	if gift.is_empty():
+		var off: Dictionary = taken_off().get(id, {})
+		off[kind] = _season(); taken_off()[id] = off
+	else:
+		var list: Array = gifts().get(id, [])
+		var at := list.rfind(gift)
+		if at >= 0: list.remove_at(at)
+		gifts()[id] = list
+	if game.world_context.has_method("_changed"): game.world_context._changed()
+	dress(pony, id, _season())
 
 ## Validate before the inventory transaction so a failed consume cannot grant a gift.
 func can_give(pony_id: String, item_id: String, pony: Node3D = null) -> bool:
@@ -109,6 +153,10 @@ func wanted(id: String, season: String) -> Dictionary:
 		for other: String in result.keys():
 			if not default_slot.is_empty() and FITTED.slot(other) == default_slot: result.erase(other)
 		result[kind] = int(defaults[kind])
+	# Her own pieces Anon took off stay off this season; gifts below are given back by hand.
+	var off: Dictionary = taken_off().get(id, {})
+	for kind: String in off:
+		if str(off[kind]) == season: result.erase(kind)
 	# Trixie keeps her showmare outfit; gifts are not fitted to her covered mane yet.
 	if id == TRIXIE: return result
 	for gift: String in gifts().get(id, []):

@@ -207,6 +207,9 @@ func _ready() -> void:
 	tea.name="ChemTea";add_child(tea);tea.setup(self)
 	var feeding:Node=preload("res://world/relationships/hand_feeding.gd").new()
 	feeding.name="HandFeeding";add_child(feeding);feeding.setup(self)
+	# O takes a scarf, hat or socks off the pony in view (world/relationships/pony_undress.gd).
+	var undress:Node=preload("res://world/relationships/pony_undress.gd").new()
+	undress.name="PonyUndress";add_child(undress);undress.setup(self)
 	shop_world=preload("res://world/shop/shop_world.gd").new()
 	shop_world.name="ShopWorld";add_child(shop_world)
 	apple_bucking=preload("res://world/minigames/apple_bucking/apple_bucking.gd").new()

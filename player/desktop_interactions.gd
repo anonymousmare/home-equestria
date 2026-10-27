@@ -299,6 +299,8 @@ func interaction_hint() -> Dictionary:
 	if hoof != null and not hoof.candidate(offer.point, .12).is_empty(): text += "   E · Hold hoof"
 	if not _select(true).is_empty(): text += "   Right click · Smack"
 	text += "   G · Carry"
+	var undress: Node = get_tree().get_first_node_in_group("pony_undress")
+	if undress != null: text += undress.hint_suffix(offer.target)
 	offer.text = text; offer.outline = null
 	return offer
 
