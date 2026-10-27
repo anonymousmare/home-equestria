@@ -15,7 +15,9 @@ extends Node
 ## are worn whatever the season, and are saved in the world ("pony_gifts").
 ## Anon can take pieces off her again on desktop (world/relationships/pony_undress.gd, O): a gift
 ## goes back into his briefcase, her own seasonal or show piece stays off for the rest of the season
-## ("pony_taken_off").
+## ("pony_taken_off"). She can take a piece off herself and put it back on with [take_off: ITEM] and
+## [put_on: ITEM] (world/ai/pony_action_schema.gd): she keeps it with her until she does (log
+## 2026-10-27: Anon told Twilight to take her aviators off, she said "There." and nothing happened).
 const KINDS := ["scarf", "beanie", "sunhat", "socks", "wizard_hat", "cape", "spa-necklace", "bowtie", "necktie", "cowpony-hat", "detective-hat", "nurse-cap", "cat-eye-glasses", "aviators", "goggles", "headphones"]
 const WORN_NAMES := {"scarf":"a scarf", "beanie":"a detective hat", "sunhat":"a cowpony hat",
 	"socks":"striped thigh-high socks", "wizard_hat":"a wizard hat", "cape":"a cape", "spa-necklace":"a spa pendant necklace", "bowtie":"a bow tie", "necktie":"a necktie", "cowpony-hat":"a cowpony hat", "detective-hat":"a detective hat", "nurse-cap":"a nurse cap", "cat-eye-glasses":"cat-eye glasses", "aviators":"aviator glasses", "goggles":"flight goggles", "headphones":"headphones"}
@@ -47,8 +49,12 @@ static func situation_line(pony: Node) -> String:
 		if piece.is_queued_for_deletion(): continue
 		var kind := String(piece.name).trim_prefix("Wear_")
 		if WORN_NAMES.has(kind) and not items.has(WORN_NAMES[kind]): items.append(WORN_NAMES[kind])
-	if items.is_empty(): return "- You currently have no seasonal or gifted clothing equipped."
-	return "- You are currently wearing %s. You know you are wearing these items; a comment about your hat or clothes can refer to them." % ", ".join(items)
+	var aside: PackedStringArray = []
+	for kind: String in pony.get_meta("wardrobe_set_aside", []):
+		aside.append(str(WORN_NAMES.get(kind, kind)))
+	var kept := "" if aside.is_empty() else " You took off %s and have it with you; [put_on: ITEM] wears it again." % ", ".join(aside)
+	if items.is_empty(): return "- You currently have no seasonal or gifted clothing equipped." + kept
+	return "- You are currently wearing %s. You know you are wearing these items; a comment about your hat or clothes can refer to them. Taking one off is [take_off: ITEM]; saying you did does nothing without it.%s" % [", ".join(items), kept]
 
 func setup(host: Node) -> void:
 	game = host
@@ -59,7 +65,9 @@ func gifts() -> Dictionary:
 	if not state.get("pony_gifts") is Dictionary: state["pony_gifts"] = {}
 	return state.pony_gifts
 
-## {pony id: {kind: season}}: her own pieces Anon took off; she leaves them off until the season turns.
+## {pony id: {kind: season or KEPT}}: a season for her own piece Anon took off (off until the season
+## turns); KEPT for any piece she took off herself (off until she puts it back on or is given another).
+const KEPT := "kept"
 func taken_off() -> Dictionary:
 	var state: Dictionary = game.world_context.state
 	if not state.get("pony_taken_off") is Dictionary: state["pony_taken_off"] = {}
@@ -84,6 +92,53 @@ static func _listed(rows: Array, kind: String) -> bool:
 	for row: Array in rows:
 		if row[0] == kind: return true
 	return false
+
+## The pieces actually on her now (kinds), and the ones she took off herself and has with her.
+func worn_kinds(pony: Node3D) -> Array:
+	var result := []
+	for kind: String in pony.get_meta("wardrobe", {}):
+		if not pony.find_children("Wear_" + kind + "*", "", true, false).is_empty(): result.append(kind)
+	return result
+
+func set_aside(pony_id: String) -> Array:
+	var off: Dictionary = taken_off().get(pony_id, {})
+	return off.keys().filter(func(kind: String) -> bool: return str(off[kind]) == KEPT)
+
+## The kind among `kinds` that a model's word names: "aviators", "aviator glasses", "hat", "glasses".
+static func kind_for(word: String, kinds: Array) -> String:
+	var text := word.to_lower().strip_edges().replace(" ", "_").replace("-", "_").trim_prefix("my_").trim_prefix("the_").trim_prefix("her_")
+	for kind: String in kinds:
+		if text == kind.replace("-", "_"): return kind
+	for kind: String in kinds:
+		var name := str(WORN_NAMES.get(kind, kind)).trim_prefix("a ").trim_prefix("an ").replace(" ", "_").replace("-", "_")
+		if text == name or name.ends_with(text) or text.ends_with(name): return kind
+	var hats := ["beanie", "sunhat", "cowpony-hat", "detective-hat", "nurse-cap", "wizard_hat"]
+	var groups := {"hat": hats, "cap": hats, "headphones": ["headphones"], "glasses": ["cat-eye-glasses", "aviators", "goggles"], "sunglasses": ["aviators"],
+		"shades": ["aviators"], "socks": ["socks"], "stockings": ["socks"], "tie": ["bowtie", "necktie"], "necklace": ["spa-necklace"], "pendant": ["spa-necklace"]}
+	for key: String in groups:
+		if text == key or text.ends_with("_" + key) or text == key + "s":
+			for kind: String in kinds:
+				if kind in groups[key]: return kind
+	return ""
+
+## She takes a piece off herself ([take_off]) and keeps it with her; [put_on] wears it again.
+func self_take_off(pony: Node3D, kind: String) -> bool:
+	var id := str(pony.get("identity").id)
+	if kind not in worn_kinds(pony): return false
+	var off: Dictionary = taken_off().get(id, {})
+	off[kind] = KEPT; taken_off()[id] = off
+	if game.world_context.has_method("_changed"): game.world_context._changed()
+	dress(pony, id, _season())
+	return true
+
+func self_put_on(pony: Node3D, kind: String) -> bool:
+	var id := str(pony.get("identity").id)
+	var off: Dictionary = taken_off().get(id, {})
+	if kind not in pony.get_meta("wardrobe_set_aside", []): return false
+	off.erase(kind); taken_off()[id] = off
+	if game.world_context.has_method("_changed"): game.world_context._changed()
+	dress(pony, id, _season())
+	return true
 
 ## Takes `kind` off her now. A gift leaves her gift list (the caller puts it in the briefcase first);
 ## her own piece is remembered as taken off for this season.
@@ -115,6 +170,9 @@ func give(pony_id: String, item_id: String, pony: Node3D = null) -> bool:
 	if not can_give(pony_id, item_id, pony): return false
 	var list: Array = gifts().get(pony_id, [])
 	list.append(item_id); gifts()[pony_id] = list
+	# A new piece goes on even where she had taken that kind off.
+	var off: Dictionary = taken_off().get(pony_id, {})
+	off.erase(item_id.split(":")[1])
 	if game.world_context.has_method("_changed"): game.world_context._changed()
 	return true
 
@@ -134,7 +192,7 @@ func _physics_process(delta: float) -> void:
 		dress(pony, str(identity.id), season)
 
 ## What she wears now: {kind: colour index}.
-func wanted(id: String, season: String) -> Dictionary:
+func wanted(id: String, season: String, honour_off := true) -> Dictionary:
 	var result := {}
 	var roll := absi(hash(id))
 	var colour := roll % COLOURS.size()
@@ -153,13 +211,8 @@ func wanted(id: String, season: String) -> Dictionary:
 		for other: String in result.keys():
 			if not default_slot.is_empty() and FITTED.slot(other) == default_slot: result.erase(other)
 		result[kind] = int(defaults[kind])
-	# Her own pieces Anon took off stay off this season; gifts below are given back by hand.
-	var off: Dictionary = taken_off().get(id, {})
-	for kind: String in off:
-		if str(off[kind]) == season: result.erase(kind)
 	# Trixie keeps her showmare outfit; gifts are not fitted to her covered mane yet.
-	if id == TRIXIE: return result
-	for gift: String in gifts().get(id, []):
+	for gift: String in gifts().get(id, []) if id != TRIXIE else []:
 		var parts := gift.split(":")
 		if parts.size() != 3: continue
 		# The latest gift wins within its physical slot, preserving gift history.
@@ -168,6 +221,11 @@ func wanted(id: String, season: String) -> Dictionary:
 			for kind: String in result.keys():
 				if FITTED.slot(kind) == slot: result.erase(kind)
 		result[parts[1]] = int(parts[2])
+	# Her own pieces Anon took off stay off this season; what she took off herself stays off until she
+	# puts it back on. A gift Anon took off left her gift list instead.
+	var off: Dictionary = taken_off().get(id, {}) if honour_off else {}
+	for kind: String in off:
+		if str(off[kind]) == season or str(off[kind]) == KEPT: result.erase(kind)
 	return result
 
 func dress(pony: Node3D, id: String, season: String) -> void:
@@ -176,6 +234,9 @@ func dress(pony: Node3D, id: String, season: String) -> void:
 		for kind: String in want.keys():
 			if FITTED.has(kind) or FITTED.OUTFIT.has(kind): want.erase(kind)
 	var worn: Dictionary = pony.get_meta("wardrobe", {})
+	# What she took off herself and would wear now (a summer scarf she took off is just put away).
+	var full := wanted(id, season, false)
+	pony.set_meta("wardrobe_set_aside", set_aside(id).filter(func(kind: String) -> bool: return full.has(kind)))
 	if worn == want: return
 	for kind: String in worn.keys():
 		if not want.has(kind) or int(want[kind]) != int(worn[kind]):

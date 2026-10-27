@@ -49,7 +49,13 @@ func context(id: String, targets: Dictionary) -> Dictionary:
 	# A tea set within reach lets her pour tea (world/chemistry/chem_tea.gd).
 	var tea: Node = get_tree().get_first_node_in_group("chem_tea") if is_inside_tree() else null
 	if tea != null and tea.sets_near(executor.actor): capabilities.append("pour_tea")
-	var result := {"capabilities": capabilities, "targets": targets, "locations": places, "place_labels": _place_labels(), "items": items}
+	# What she wears and what she took off herself (world/characters/accessories/pony_wardrobe.gd).
+	var wardrobe: Node = get_tree().get_first_node_in_group("pony_wardrobe") if is_inside_tree() else null
+	var worn: Array = wardrobe.worn_kinds(executor.actor) if wardrobe != null and is_instance_valid(executor.actor) else []
+	var aside: Array = executor.actor.get_meta("wardrobe_set_aside", []) if is_instance_valid(executor.actor) else []
+	if not worn.is_empty(): capabilities.append("take_off")
+	if not aside.is_empty(): capabilities.append("put_on")
+	var result := {"capabilities": capabilities, "targets": targets, "locations": places, "place_labels": _place_labels(), "items": items, "worn": worn, "set_aside": aside}
 	var callable_ponies: Array[String] = []
 	for other: String in targets:
 		if other == id or not executors.has(other) or not is_instance_valid(executors[other]): continue
@@ -134,6 +140,21 @@ func dispatch_item(id: String, action: Dictionary, targets: Dictionary) -> void:
 	var belongings: Node = get_tree().get_first_node_in_group("pony_belongings")
 	if belongings == null: executor._report(action, "failed", "Nothing to use"); return
 	belongings.use(id, executor.actor, action, targets, executor)
+
+## [take_off: ITEM] / [put_on: ITEM]: validate() already turned ITEM into a wardrobe kind.
+func dispatch_wear(id: String, action: Dictionary) -> void:
+	var executor: Node = executors.get(id)
+	if not is_instance_valid(executor): return
+	var wardrobe: Node = get_tree().get_first_node_in_group("pony_wardrobe")
+	var kind := str(action.get("item_id", ""))
+	var name := str(wardrobe.WORN_NAMES.get(kind, kind)) if wardrobe != null else kind
+	if action.type == "take_off":
+		var off: bool = wardrobe != null and wardrobe.self_take_off(executor.actor, kind)
+		executor._report(action, "completed" if off else "failed", ("Took off %s; you have it with you" % name) if off else "You are not wearing that")
+	else:
+		var on: bool = wardrobe != null and wardrobe.self_put_on(executor.actor, kind)
+		executor._report(action, "completed" if on else "failed", ("Wearing %s again" % name) if on else "You do not have that with you")
+	print("[wardrobe] %s %s %s" % [id, action.type, kind])
 
 func dispatch_arrival(id: String, action: Dictionary) -> void:
 	var executor: Node = executors.get(id)
